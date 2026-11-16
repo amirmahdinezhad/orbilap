@@ -1,0 +1,546 @@
+/* Neutral card backgrounds; color is confined to small status details. */
+:root {
+  --home-bg: #111111;
+  --home-surface: #202020;
+  --home-surface-top: #262626;
+  --home-selected-surface: var(--home-surface);
+  --home-segment-fill: #303030;
+  --home-segment-ink: #ededed;
+  --home-text: #efefef;
+  --home-muted: #a6a6a6;
+  --home-inset: #181818;
+  --home-border: #3b3b3b;
+  --home-divider: #303030;
+  --home-hover: #2c2c2c;
+  --home-track: #404040;
+  --home-focus: #d0d0d0;
+  --home-action: #d0d0d0;
+  --home-add-fill: #dedede;
+  --home-primary-ink: #202020;
+  --home-active: #888888;
+  --home-healthy: #bcbcbc;
+  --home-signal: #71c39a;
+  --home-warning: #e7ba62;
+  --home-danger: #ed9292;
+  --home-picker: #242424;
+  --home-scrim: rgb(0 0 0 / 58%);
+  --home-shadow: 0 2px 3px -1px rgb(0 0 0 / 10%), 0 1px 0 rgb(25 28 33 / 2%);
+  --home-card-radius: 16px;
+  --home-sheet-radius: 20px;
+  --home-group-radius: 12px;
+  --home-metric-radius: 10px;
+  /* All surfaces, including loading and legacy controls, share these roles. */
+  --bg: var(--home-bg);
+  --card: var(--home-surface);
+  --raised: var(--home-hover);
+  --raised-dark: var(--home-inset);
+  --inset: var(--home-inset);
+  --fg: var(--home-text);
+  --title: var(--home-text);
+  --muted: var(--home-muted);
+  --line: var(--home-border);
+  --inset-line: var(--home-divider);
+  --ok: var(--home-healthy);
+  --notice: var(--home-warning);
+}
+[data-theme="light"] {
+  --home-bg: #f5f5f5;
+  --home-surface: #fff;
+  --home-surface-top: #fafafa;
+  --home-selected-surface: #fff;
+  --home-segment-fill: #fff;
+  --home-segment-ink: #292929;
+  --home-text: #252525;
+  --home-muted: #626262;
+  --home-inset: #f0f0f0;
+  --home-border: #d5d5d5;
+  --home-divider: #e3e3e3;
+  --home-hover: #e8e8e8;
+  --home-track: #d5d5d5;
+  --home-focus: #525252;
+  --home-action: #3b3b3b;
+  --home-add-fill: #292929;
+  --home-primary-ink: #fff;
+  --home-active: #292929;
+  --home-healthy: #777777;
+  --home-signal: #27734f;
+  --home-warning: #93600d;
+  --home-danger: #b63e42;
+  --home-picker: #fafafa;
+  --home-scrim: rgb(0 0 0 / 28%);
+}
+/* Legacy import, recovery and update cards inherit the same gray material.
+ * Portaled surfaces need their own scope because they sit outside #root. */
+:is(#root, .ak-dialog, .ui-select-content, .workspace-picker-panel) {
+  --accent: var(--home-action);
+  --accent-hover: var(--home-text);
+  --accent-bg: var(--home-hover);
+  --accent-action: var(--home-add-fill);
+  --accent-action-hover: var(--home-add-fill);
+  --ok-bg: var(--home-hover);
+  --danger-bg: var(--home-inset);
+}
+:is(#root:has(> .home-header), .workspace-picker-panel) { --home-card-radius: 23px; }
+#root:has(> .home-header) {
+  --fg: var(--home-text);
+  --muted: var(--home-muted);
+  --font: "Figtree Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --workspace-control: #222222;
+  --workspace-active-control: #20352a;
+  --workspace-active-ink: #c8f3df;
+  --workspace-active-edge: #2a382f;
+  --workspace-card-edge: #2b2b2b;
+  --home-bg: #0e0e0e;
+  --home-surface: #171717;
+  --home-selected-surface: #151e18;
+  --home-inset: #171717;
+  --home-divider: #292929;
+  --home-add-fill: #fff;
+  --home-primary-ink: #141414;
+  --home-signal: #65d3a5;
+  --home-healthy: #d2d2d2;
+  color: var(--home-text);
+  padding: 20px 15px 0;
+  background: var(--home-bg);
+}
+[data-theme="light"] #root:has(> .home-header) {
+  --workspace-control: #e9e9e9;
+  --workspace-active-control: #d7ebe0;
+  --workspace-active-ink: #215f43;
+  --workspace-active-edge: #c6dbce;
+  --workspace-card-edge: #dedede;
+  --home-bg: #f5f5f5;
+  --home-surface: #fff;
+  --home-selected-surface: #eaf4ed;
+  --home-inset: #f0f0f0;
+  --home-divider: #dedede;
+  --home-add-fill: #202020;
+  --home-primary-ink: #fff;
+  --home-signal: #27734f;
+  --home-healthy: #626262;
+}
+.home-header.app-header { flex-shrink: 0; display: flex; flex-direction: column; align-items: stretch; margin: 0 0 10px; padding: 0 0 14px; border: 0; border-bottom: 1px solid var(--home-divider); }
+.home-topline { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.home-header .brand { min-width: 0; flex: 1; }
+.home-header .header-actions { gap: 5px; flex-shrink: 0; }
+.home-header .header-actions > .ui-button { flex: 0 0 36px; width: 36px; height: 36px; min-height: 36px; }
+.workspace-picker { display: flex; align-items: center; gap: 10px; width: fit-content; max-width: 100%; min-width: 0; min-height: 44px; padding: 2px 6px; margin-left: -6px; position: relative; isolation: isolate; border: 1px solid transparent; border-radius: var(--ui-radius); background: transparent; box-shadow: none; text-align: left; color: var(--home-text); transform: none; }
+.workspace-mark { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: var(--ui-radius); color: var(--home-text); background: var(--home-hover); font-size: 15px; line-height: 1.1; font-weight: 600; letter-spacing: normal; }
+.home-header .workspace-mark { width: 46px; height: 46px; border-radius: 50%; background: var(--workspace-control); font-size: 19px; }
+.workspace-picker-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 0 1 auto; }
+.workspace-picker-name { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.home-header .workspace-picker .brand-caption { color: var(--home-muted); font-size: 12px; line-height: 16px; letter-spacing: 0; font-weight: 500; }
+.workspace-picker-name > strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; line-height: 22px; font-weight: 650; letter-spacing: normal; }
+.workspace-picker-status { color: var(--home-muted); font-size: 10px; line-height: 14px; }
+.workspace-picker-chevron { flex-shrink: 0; width: 16px; height: 16px; color: var(--home-muted); transform: rotate(0deg); }
+.workspace-picker[aria-expanded="true"] .workspace-picker-chevron { transform: rotate(180deg); }
+.workspace-picker[data-closing="true"] .workspace-picker-chevron { transform: rotate(0deg); }
+.workspace-picker[data-motion="pointer"] .workspace-picker-chevron { transition: transform 200ms var(--ease-ios); }
+
+.home-accounts.providers { gap: 20px; padding: 0 0 20px; scroll-padding-block: 10px; }
+.snap-removal-layer { position: fixed; inset: 0; z-index: 100; }
+.snap-removal-layer, .snap-removal-layer * { pointer-events: none !important; }
+.snap-removal-card {
+  -webkit-mask-image: linear-gradient(90deg, transparent var(--snap-trail), #000 var(--snap-front));
+  mask-image: linear-gradient(90deg, transparent var(--snap-trail), #000 var(--snap-front));
+}
+.home-accounts .provider-account-groups { gap: 20px; }
+.home-accounts .provider-group-title { gap: 8px; margin: 0 0 10px; color: var(--home-text); font-size: 17px; line-height: 22px; font-weight: 700; }
+.home-accounts .provider-activation-note { margin: 0 0 12px; color: var(--home-muted); font-size: 12px; line-height: 1.5; }
+.home-accounts .provider-group-title > .plogo { width: 32px; height: 32px; opacity: 1; }
+.home-accounts .provider-group-title > .plogo svg { width: 100%; height: 100%; }
+.home-accounts .provider-count { flex: none; margin-left: 0; color: var(--home-muted); background: var(--workspace-control); border: 0; border-radius: 999px; height: 24px; min-width: 25px; padding-inline: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.home-accounts .provider-experimental { margin-left: 0; font-size: 10px; }
+.workspace-accounts > .codex-reset-notice {
+  --reset-tone: var(--home-active);
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 10px;
+  border: 1px solid var(--home-divider); border-radius: var(--ui-radius); background: var(--home-surface);
+}
+.codex-reset-notice[data-kind="possible"] { --reset-tone: var(--home-warning); }
+.codex-reset-notice[data-kind="completed"] { --reset-tone: var(--home-healthy); }
+.codex-reset-mark { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: var(--ui-radius); background: var(--home-inset); color: var(--reset-tone); }
+.codex-reset-copy { flex: 1; min-width: 0; }
+.codex-reset-head { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; color: var(--home-text); font-size: 13px; line-height: 18px; }
+.codex-reset-head strong { font-weight: 600; }
+.codex-reset-chance { padding: 1px 6px; border-radius: 5px; background: var(--home-inset); color: var(--reset-tone); font-size: 10px; font-weight: 600; }
+.codex-reset-meta, .codex-reset-description { margin: 3px 0 0; color: var(--home-muted); font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.home-accounts .codex-reset-close.ui-button { flex: 0 0 32px; width: 32px; height: 32px; min-height: 32px; }
+.home-accounts .workspace-account-list, .home-accounts .stack { gap: 10px; }
+.home-accounts .account-card {
+  position: relative; padding: 11px 14px 17px;
+  border: 1px solid var(--workspace-card-edge); border-radius: var(--home-card-radius);
+  background: var(--home-surface); box-shadow: none;
+}
+.home-accounts .account-card + .account-card { border-top-color: var(--workspace-card-edge); }
+.home-accounts .account-card .workspace-account-row { position: relative; gap: 8px; align-items: start; }
+.home-accounts .account-card .workspace-account-title { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.home-accounts .account-card .workspace-account-title .row-title { color: var(--home-text); font: 650 15px/19px var(--font); letter-spacing: normal; overflow-wrap: anywhere; }
+.home-accounts .account-card .workspace-account-email { color: var(--home-muted); font-size: 11px; line-height: 15px; overflow-wrap: anywhere; white-space: normal; overflow: visible; text-overflow: clip; }
+.home-accounts .account-card.is-active {
+  background: var(--home-selected-surface);
+  border-color: var(--workspace-active-edge);
+}
+.account-active-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--home-action) 10%, var(--home-surface));
+  color: var(--home-action);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+}
+.account-active-label::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.home-accounts .account-card.is-active :is(.plan-badge, .account-monogram) { background: var(--workspace-active-control); color: var(--workspace-active-ink); }
+.home-accounts .account-card .account-active-label { padding: 1px 6px; border-radius: 999px; background: var(--workspace-active-control); color: var(--home-signal); font-size: 11px; line-height: 16px; }
+.home-accounts .account-card .workspace-account-actions { gap: 6px; margin: 2px 0 0; flex-shrink: 0; }
+.home-accounts .account-card .workspace-account-actions .ui-button:is(.ui-button-icon, .ui-button-icon-sm) {
+  flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 0;
+}
+.home-accounts .account-card .account-usage-preview { margin-top: 12px; padding-top: 0; border: 0; color: var(--home-text); text-align: left; }
+.account-usage-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: clamp(12px, 6.5vw, 28px); flex: 1 0 100%; min-width: 0; }
+.antigravity-featured { margin-top: 12px; }
+.antigravity-featured-model { min-width: 0; }
+.home-accounts .account-card .antigravity-featured-model .account-usage-preview { margin-top: 0; }
+.antigravity-featured:has(> :nth-child(2)) .account-usage-metrics { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.account-usage-metric { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--home-healthy); }
+.usage-preview-label { color: var(--home-muted); font-size: 11px; line-height: 15px; }
+.account-usage-metric > strong { display: flex; align-items: baseline; gap: 3px; color: var(--home-text); font-size: 19px; line-height: 24px; letter-spacing: -.25px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.account-usage-metric .usage-preview-unit { color: var(--home-muted); font-size: 11px; font-weight: 400; letter-spacing: normal; }
+.usage-preview-plot { display: block; position: relative; height: 12px; margin-top: 2px; cursor: default; }
+.usage-preview-plot::before { content: ""; position: absolute; inset: -5px 0; }
+.usage-preview-track { display: block; position: absolute; top: 4px; left: 0; right: 0; height: 5px; border-radius: 999px; background: var(--home-track); overflow: hidden; }
+.usage-preview-time-marker { position: absolute; top: 2px; width: 1px; height: 9px; border-radius: 1px; background: var(--home-action); transform: translateX(-50%); pointer-events: none; }
+.usage-preview-time-marker[data-pending] { background: var(--home-warning); }
+.usage-reset-tooltip { display: flex; flex-direction: column; gap: 4px; }
+.usage-reset-tooltip strong { font-weight: 600; }
+.usage-reset-tooltip-note { font-size: 10px; opacity: .8; }
+.usage-preview-track > span { display: block; width: 100%; height: 100%; background: currentColor; transform-origin: left; }
+.account-usage-metric[data-tone="warning"] { color: var(--home-warning); }
+.home-accounts .account-usage-metric[data-tone="warning"] { color: var(--home-healthy); }
+.account-usage-metric[data-tone="danger"] { color: var(--home-danger); }
+.account-usage-metric[data-tone="danger"] > strong { color: var(--home-danger); }
+.account-active-label::before { color: var(--home-signal); }
+.home-accounts .home-inline-error, .home-accounts .empty-state-symbol { border-color: var(--home-divider); border-radius: var(--ui-radius); background: var(--home-inset); }
+.home-accounts .empty-state { max-width: 310px; margin-inline: auto; }
+.home-accounts .empty-state h2, .home-accounts .empty-state h3 { color: var(--home-text); font-size: 17px; line-height: 24px; }
+.home-accounts .empty-state p { color: var(--home-muted); line-height: 1.6; }
+.home-accounts .home-inline-error { padding: 14px; }
+.home-accounts .home-inline-error .ui-button { color: var(--home-text); background: var(--home-hover); border-color: var(--home-border); border-radius: var(--ui-radius); }
+.account-switch-glyph { position: relative; display: inline-block; flex: none; }
+.account-switch-glyph > svg { position: absolute; left: 13%; }
+.account-switch-glyph > svg:first-child { top: -9%; }
+.account-switch-glyph > svg:last-child { bottom: -9%; }
+.loading-ring {
+  display: inline-block;
+  box-sizing: border-box;
+  vertical-align: middle;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+}
+.home-accounts .workspace-error { margin-top: 12px; color: var(--home-danger); font-size: 11px; line-height: 17px; overflow-wrap: anywhere; }
+.home-accounts .other-providers { border-color: var(--home-divider); color: var(--home-muted); }
+
+.home-header .home-add-account {
+  padding: 0; border: 0; border-radius: 50%;
+  background: var(--home-add-fill); color: var(--home-primary-ink); box-shadow: none;
+}
+
+/* The existing WAAPI presence keeps every dismissal animated through unmount. */
+.workspace-picker-overlay { position: fixed; inset: 0; z-index: 300; background: var(--home-scrim); }
+.workspace-picker-panel { position: fixed; z-index: 301; top: 94px; left: 16px; width: min(380px, calc(100vw - 32px)); max-height: calc(100dvh - 114px); display: flex; flex-direction: column; padding: 12px; border: 1px solid var(--home-border); border-radius: var(--ui-radius); background: var(--home-picker); box-shadow: 0 16px 40px rgb(0 0 0 / 20%); color: var(--home-text); font-family: "Figtree Variable", -apple-system, BlinkMacSystemFont, sans-serif; transform-origin: top left; opacity: 1; }
+.workspace-picker-panel[data-closing="true"] { pointer-events: none; }
+.workspace-picker-head { display: flex; justify-content: space-between; align-items: center; padding-left: 10px; }
+.workspace-picker-head h2 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; }
+.workspace-picker-head .ui-button { color: var(--home-muted); border-radius: var(--ui-radius); }
+.workspace-choices { overflow-y: auto; min-height: 0; padding: 0 2px 8px; scroll-padding: 4px; }
+.workspace-current-card { display: flex; align-items: center; gap: 10px; margin: 0; }
+.workspace-current-card > .workspace-mark { width: 32px; height: 34px; border-radius: var(--ui-radius); font-size: 12px; }
+.workspace-current-name { display: grid; flex: 1; min-width: 0; }
+.workspace-current-name > :is([role="listbox"], input) { grid-area: 1 / 1; min-width: 0; transition: opacity var(--home-motion-feedback) var(--ease-out); }
+.workspace-current-card .workspace-choice[aria-selected="true"] { min-height: 44px; padding: 0; border: 0; background: transparent; }
+.workspace-current-card .workspace-choice > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 15px/19px var(--font); }
+.workspace-current-card .workspace-rename-input {
+  width: 100%; height: 44px; min-height: 44px; padding: 0 9px;
+  border: 1px solid var(--home-border); border-radius: var(--ui-radius);
+  background: var(--home-picker); color: var(--home-text);
+  font: 500 13px/19px "Figtree Variable", sans-serif;
+  user-select: text; opacity: 0; pointer-events: none;
+}
+.workspace-current-card[data-editing="true"] {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  row-gap: 12px;
+}
+.workspace-current-card[data-editing="true"] .workspace-rename-input { opacity: 1; pointer-events: auto; }
+.workspace-current-card[data-editing="true"] [role="listbox"] { opacity: 0; pointer-events: none; }
+.workspace-rename-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 4px; }
+.workspace-current-card .workspace-rename-actions .ui-button {
+  min-height: 32px; padding: 0 9px; border-radius: var(--radius-s);
+  gap: 4px; font-size: 12px;
+}
+.workspace-current-actions { display: flex; align-items: center; flex-shrink: 0; gap: 4px; }
+.workspace-picker-panel .workspace-manage-trigger {
+  background: var(--workspace-active-control); color: var(--workspace-active-ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .workspace-picker-panel .workspace-manage-trigger:hover:enabled {
+    background: color-mix(in srgb, var(--workspace-active-control) 85%, var(--home-text));
+  }
+}
+.workspace-rename-actions .ui-button-primary {
+  background: var(--home-action); color: var(--home-primary-ink);
+}
+.workspace-picker-panel :is(.workspace-manage-trigger, .workspace-rename-actions .ui-button):focus-visible {
+  outline: 2px solid var(--home-focus); outline-offset: 2px;
+}
+.workspace-current-card[data-rename-motion="instant"] .workspace-current-name > * { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .workspace-current-name > * { transition: none; }
+  .workspace-rename-actions .ak-spin { animation: none; }
+}
+.workspace-choice-label { margin: 12px 8px 7px; color: var(--home-muted); font-size: 10px; line-height: 16px; }
+.workspace-other-card { display: flex; align-items: center; gap: 4px; padding-inline: 5px 14px; }
+.workspace-other-card .workspace-choice { flex: 1; min-width: 0; }
+.workspace-other-card .workspace-manage-trigger { flex-shrink: 0; }
+.workspace-choice { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 58px; padding: 8px; border: 1px solid transparent; border-radius: var(--ui-radius); background: transparent; color: var(--home-text); text-align: left; font: 500 13px/19px "Figtree Variable", sans-serif; }
+.workspace-choice[aria-selected="true"] { background: var(--home-inset); border-color: var(--home-divider); }
+
+.workspace-choice > .workspace-mark { width: 32px; height: 34px; border-radius: var(--ui-radius); font-size: 12px; }
+.workspace-choice > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.workspace-choice > svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--home-active); }
+.workspace-create-section { flex-shrink: 0; padding-top: 8px; border-top: 1px solid var(--home-divider); }
+.workspace-picker-panel .workspace-create { position: relative; isolation: isolate; width: 100%; background: transparent; justify-content: flex-start; flex-shrink: 0; gap: 9px; min-height: 48px; padding: 10px; border: 0; border-radius: var(--ui-radius); color: var(--home-text); font-size: 12px; }
+:is(.home-header, .home-accounts, .workspace-picker-panel) button:focus-visible { outline: none; }
+
+/* Matching solid sheets keep the provider/account context readable. */
+.ak-dialog { --fg: var(--home-text); --title: var(--home-text); --muted: var(--home-muted); --card: var(--home-surface); --raised: var(--home-hover); --inset: var(--home-inset); --line: var(--home-divider); --inset-line: var(--home-divider); background: var(--home-bg); color: var(--home-text); border: 1px solid var(--home-divider); font-family: "Figtree Variable", -apple-system, BlinkMacSystemFont, sans-serif; box-shadow: 0 16px 40px rgb(0 0 0 / 20%); }
+.ak-dialog.usage-card { padding: 20px; border-radius: var(--ui-radius); }
+.usage-card .modal-head, .usage-card .modal-detail { margin-bottom: 18px; }
+.usage-card .usage-identity strong { font-size: 17px; font-weight: 500; }
+.usage-card .usage-identity > span { font-size: 12px; }
+.usage-card .quota-windows { gap: 12px; }
+.usage-card .usage-row, .usage-card .usage-row:first-child { padding: 16px; gap: 14px; border: 0; border-radius: var(--ui-radius); background: var(--home-surface); }
+.usage-card .usage-row + .usage-row { border: 0; }
+.usage-card .usage-name { font-size: 13px; color: var(--home-muted); }
+.usage-card .usage-row .usage-pct { font-size: 32px; font-weight: 500; color: var(--home-text); line-height: 1.15; }
+.usage-card .usage-bar { height: 8px; background: var(--home-track); }
+.usage-card .usage-meta { font-size: 11px; color: var(--home-muted); }
+.ui-tooltip { max-width: min(280px, calc(100vw - 24px)); overflow-wrap: anywhere; background: var(--home-picker); color: var(--home-text); border-color: var(--home-border); font-size: 11px; line-height: 16px; }
+
+@media (max-width: 380px) {
+  #root:has(> .home-header) { padding: 12px 12px 0; }
+  .home-topline { gap: 4px; }
+  .workspace-picker { gap: 8px; }
+  .workspace-picker-name > strong { font-size: 17px; line-height: 21px; }
+  .home-accounts .account-card { padding: 12px; }
+  .account-usage-metric { padding: 8px; }
+  .account-usage-metric + .account-usage-metric { padding: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-picker-chevron { transition: none !important; }
+  :is(.home-header, .workspace-account-actions) .ui-button > .ak-icon { transition: none !important; transform: none !important; }
+}
+
+/* Floating notifications keep clear of the tray edges at every viewport width. */
+[data-sonner-toaster].home-notifications { z-index: 500 !important; width: var(--width) !important; left: 50% !important; right: auto !important; transform: translateX(-50%) !important; }
+[data-sonner-toast].home-notification { width: 100% !important; border-radius: var(--orbilap-radius) !important; padding: 14px 46px 14px 16px !important; font-size: 13px !important; line-height: 19px !important; box-shadow: 0 6px 20px rgb(0 0 0 / 16%) !important; }
+[data-sonner-toast].home-notification [data-close-button] { inset: 50% 12px auto auto !important; transform: translateY(-50%) !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; }
+[data-sonner-toast][data-type="success"] [data-icon] { color: var(--home-signal); }
+[data-sonner-toast][data-type="error"] [data-icon] { color: var(--home-danger); }
+[data-sonner-toast] [data-title] { overflow-wrap: anywhere; }
+.home-accounts .account-data-note { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--home-divider); color: var(--home-muted); font-size: 11px; line-height: 16px; }
+.error-panel { margin-bottom: 14px; padding: 12px; border: 1px solid var(--home-divider); border-radius: var(--ui-radius); background: var(--home-inset); color: var(--home-text); }
+.error-panel .error-head { align-items: flex-start; gap: 10px; }
+.error-panel .error-title { min-width: 0; font-size: 12px; line-height: 18px; font-weight: 500; overflow-wrap: anywhere; }
+.error-panel .error-actions { flex-shrink: 0; gap: 4px; }
+.error-panel .error-actions .ui-button { min-height: 36px; padding: 5px 8px; border-radius: var(--ui-radius); color: var(--home-muted); font-size: 11px; }
+.error-panel .error-actions .ui-button:hover { color: var(--home-text); background: var(--home-hover); }
+
+/* Home account identity shares the circular workspace monogram. */
+.home-accounts .account-card .account-identity { display: flex; flex-direction: row; align-items: center; gap: 10px; min-width: 0; }
+.account-monogram { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; background: var(--home-hover); color: var(--home-text); font: 650 16px/1 var(--font); }
+.account-identity-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+
+/* Home motion: controls provide feedback, while account surfaces stay fixed.
+ * No animated border color, shadow, blur, layout or per-frame React state. */
+#root:has(> .home-header), .workspace-picker-panel {
+  --home-motion-feedback: 160ms;
+  --home-motion-press: 100ms;
+}
+.account-extra-limits { margin-top: 6px; color: var(--home-muted); font-size: 11px; }
+.account-extra-limits > .account-extra-trigger {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 4px 0; border: 0; border-radius: 6px; background: transparent;
+}
+.account-extra-limits > .account-extra-trigger:focus-visible {
+  outline: 2px solid var(--home-active); outline-offset: 2px;
+}
+.account-extra-chevron { width: 14px; height: 14px; flex-shrink: 0; }
+.account-extra-trigger[aria-expanded="true"] > .account-extra-chevron { transform: rotate(90deg); }
+/* Grid tracks follow the content's natural height and reverse from the current size. */
+.account-extra-content { display: grid; grid-template-rows: 0fr; opacity: 0; }
+.account-extra-trigger[aria-expanded="true"] + .account-extra-content {
+  grid-template-rows: 1fr; opacity: 1;
+}
+.account-extra-clip { min-height: 0; overflow: hidden; }
+@media (prefers-reduced-motion: no-preference) {
+  .account-extra-limits[data-motion="pointer"] > .account-extra-content {
+    transition: grid-template-rows 200ms var(--ease-out), opacity 200ms var(--ease-out);
+  }
+  .account-extra-limits[data-motion="pointer"] .account-extra-chevron {
+    transition: transform 200ms var(--ease-out);
+  }
+}
+.account-extra-limits .account-usage-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.account-extra-limits .usage-preview-label { overflow-wrap: anywhere; }
+.account-extra-limits .account-usage-metric { padding: 8px; }
+/* Recovery shares Switch's painted layers and feedback below. */
+.home-accounts .account-card .account-reconnect {
+  padding: 5px 10px; min-height: 36px; gap: 6px; flex-shrink: 0;
+  border: 1px solid var(--home-divider); border-radius: 999px;
+  background: var(--home-inset); color: var(--home-text);
+}
+
+:is(.home-header, .home-accounts) .ui-button > .ak-icon,
+.workspace-picker > .workspace-mark,
+.workspace-choice > .workspace-mark { transition: transform var(--home-motion-feedback) var(--ease-out); }
+:is(.home-header, .home-accounts) .ui-button:focus-visible > .ak-icon { transition: none; }
+.workspace-picker:active:enabled:not(:focus-visible) > .workspace-mark,
+.workspace-choice:not([aria-selected="true"]):active:enabled:not(:focus-visible) > .workspace-mark { transform: scale(.97); transition-duration: var(--home-motion-press); }
+.workspace-choice { transition: background-color var(--home-motion-feedback) ease, transform var(--home-motion-press) var(--ease-out); }
+.workspace-choice:not([aria-selected="true"]):active:enabled:not(:focus-visible) { transform: scale(.98); transition-duration: var(--home-motion-press); }
+.workspace-choice:focus-visible { transition: none; transform: none; }
+.workspace-picker:focus-visible > .workspace-mark,
+.workspace-choice:focus-visible > .workspace-mark { transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.home-header, .home-accounts) .ui-button > .ak-icon,
+  .workspace-choice, .workspace-choice > .workspace-mark, .workspace-picker > .workspace-mark { transition: none !important; transform: none !important; }
+}
+
+/* Small, opaque reset ticket; the full date/marker explanation remains in aria-valuetext. */
+.ui-tooltip.usage-reset-popover {
+  min-width: 156px; max-width: min(220px, calc(100vw - 24px)); padding: 11px 12px;
+  border: 1px solid var(--home-border); border-radius: var(--ui-radius); background: var(--home-picker);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%); color: var(--home-text);
+}
+.usage-reset-tooltip { display: flex; flex-direction: column; gap: 7px; }
+.usage-reset-tooltip-label { display: flex; align-items: center; gap: 6px; color: var(--home-muted); font-size: 10px; line-height: 14px; }
+.usage-reset-tooltip-label > .ak-icon { color: var(--home-active); }
+.usage-reset-tooltip-date { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; font-size: 11px; line-height: 24px; }
+.usage-reset-tooltip-date time { font-size: 20px; font-weight: 500; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+.usage-reset-tooltip-status { font-size: 12px; line-height: 20px; }
+/* The workspace uses one solid hover treatment with an immediate focus ring. */
+.home-header .header-actions > .home-icon-button,
+.home-accounts .workspace-account-actions > .ui-button:is(.ui-button-icon, .ui-button-icon-sm) {
+  --round-button-fill: var(--workspace-control);
+  border: 0; border-radius: 50%; background: var(--round-button-fill); color: var(--home-action); box-shadow: none;
+}
+.home-accounts .account-card.is-active .workspace-account-actions > .ui-button {
+  --round-button-fill: var(--workspace-active-control);
+  color: var(--workspace-active-ink);
+}
+#root :is(.home-header, .home-accounts) :is(.home-icon-button, .home-add-account, .workspace-picker, .account-switch-action, .account-sort-select[data-input="keyboard"], .account-reconnect, .usage-preview-plot):focus-visible {
+  outline: 2px solid var(--home-focus); outline-offset: 1px;
+}
+:is(.home-header, .home-accounts) :is(.ui-button, .workspace-picker, .account-sort-select) {
+  transition: background-color var(--home-motion-feedback) ease, transform var(--home-motion-press) var(--ease-out);
+}
+:is(.home-header, .home-accounts) :is(.ui-button, .workspace-picker, .account-sort-select):focus-visible { transition: none; }
+:is(.home-header, .home-accounts) :is(.ui-button, .workspace-picker, .account-sort-select):active:enabled[aria-disabled="true"] { transform: none; }
+
+@media (hover: hover) and (pointer: fine) {
+  .home-header .header-actions > .home-icon-button:not(.ui-button-destructive):hover:enabled,
+  .home-accounts .workspace-account-actions > .ui-button:is(.ui-button-icon, .ui-button-icon-sm):hover:enabled:not([aria-disabled="true"]) {
+    background: color-mix(in srgb, var(--round-button-fill) 85%, var(--home-text));
+  }
+  .home-header .home-add-account:hover:enabled { background: color-mix(in srgb, var(--home-add-fill) 88%, var(--home-primary-ink)); }
+  .home-header .workspace-picker:hover:enabled,
+  .home-accounts .account-card .account-reconnect.ui-button:hover:enabled,
+  .workspace-choice:not([aria-selected="true"]):hover:enabled { background: var(--home-hover); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.home-header, .home-accounts) :is(.ui-button, .workspace-picker, .account-sort-select) { transition: none; }
+  :is(.home-header, .home-accounts) .ui-button:active:enabled { transform: none; }
+}
+
+/* A saved identity needing sign-in remains readable, with one clear recovery action. */
+.home-accounts .account-card.is-disconnected {
+  background: var(--home-surface);
+  box-shadow: inset 0 0 0 1px var(--home-divider);
+}
+
+.account-connection-notice { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--home-divider); }
+.account-connection-status { display: flex; align-items: center; gap: 6px; color: var(--home-warning); font-size: 12px; line-height: 18px; font-weight: 600; }
+.account-connection-note { margin: 4px 0 0; color: var(--home-muted); font-size: 11px; line-height: 17px; overflow-wrap: anywhere; }
+
+/* Billing follows the name. Keep the email accessible when the date occupies the visual line. */
+.account-secondary-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; }
+.account-secondary-meta:empty { display: none; }
+.account-subscription-expiry { color: var(--home-muted); font-size: 11px; line-height: 15px; white-space: normal; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.account-subscription-expiry:is(.is-past, .requires-payment) { color: var(--home-danger); font-weight: 600; }
+.home-accounts .account-secondary-meta:has(> .account-subscription-expiry) > .workspace-account-email {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+/* A single split control: criterion and direction read as one list tool. */
+:root { --home-motion-sort: 240ms; }
+.account-sort-region { --provider-heading-height: 35px; --sort-control-height: 29px; position: relative; min-width: 0; }
+.account-sort-groups { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.account-sort-toolbar { display: flex; align-items: center; gap: 0; width: max-content; margin: 0 0 10px auto; height: var(--sort-control-height); max-width: 53%; border: 1px solid var(--home-divider); border-radius: 999px; background: var(--home-surface); }
+/* Only share the top row when its heading starts at the top of the list. */
+.account-sort-region:has(> .account-sort-groups > :first-child > .provider-group-title:first-child,
+                         > .account-sort-groups > .provider-account-groups:first-child > :first-child > .provider-group-title:first-child)
+  > .account-sort-toolbar { position: absolute; top: calc((var(--provider-heading-height) - var(--sort-control-height)) / 2); right: 0; z-index: 2; margin: 0; }
+.account-sort-toolbar + .account-sort-groups > :first-child > .provider-group-title:first-child,
+.account-sort-toolbar + .account-sort-groups > .provider-account-groups:first-child > :first-child > .provider-group-title:first-child {
+  padding-right: 55%; min-height: var(--provider-heading-height);
+}
+@media (max-width: 380px) {
+  .home-accounts .provider-group-title { gap: 6px; font-size: 16px; }
+  .home-accounts .provider-group-title > .plogo { width: 28px; height: 28px; }
+}
+.account-sort-toolbar .account-sort-select {
+  position: relative; isolation: isolate; width: auto; min-width: 0; min-height: 27px; height: 27px; gap: 4px; padding: 0 7px;
+  border-radius: 999px 0 0 999px; font: 500 12px/16px var(--font); color: var(--home-action); background: transparent; border: 0; box-shadow: none;
+}
+.account-sort-select > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.account-sort-select > .ak-icon { flex-shrink: 0; color: inherit; }
+.account-sort-select .ui-select-chevron { width: 10px; height: 10px; flex-basis: 10px; }
+.account-sort-select .ui-select-chevron > svg { width: 10px; height: 10px; }
+.account-sort-toolbar .account-sort-select[data-state="open"] { background: var(--home-hover); }
+.account-sort-toolbar .account-sort-direction { position: relative; flex: 0 0 27px; width: 27px; min-width: 27px; height: 27px; min-height: 27px; padding: 0; border-radius: 50%; }
+.account-sort-direction::after { content: none; }
+.account-sort-menu { min-width: 248px; padding: 4px; }
+.account-sort-menu .ui-select-item { display: grid; grid-template-columns: 20px 1fr 16px; grid-template-rows: auto auto; column-gap: 8px; row-gap: 2px; padding: 6px 8px; }
+.account-sort-menu .sort-option-symbol { grid-column: 1; grid-row: 1 / 3; display: grid; place-items: center; width: 20px; height: 20px; color: var(--home-muted); }
+.account-sort-menu .ui-select-item-text { grid-column: 2; grid-row: 1; font-size: 11px; line-height: 16px; font-weight: 500; }
+.account-sort-menu .sort-option-hint { grid-column: 2; grid-row: 2; color: var(--home-muted); font-size: 10px; line-height: 14px; white-space: nowrap; }
+.account-sort-menu .ui-select-check { position: static; grid-column: 3; grid-row: 1 / 3; align-self: center; }
+.account-sort-menu [data-state="checked"] .sort-option-symbol { color: var(--home-action); }
+@media (hover: hover) and (pointer: fine) {
+  .account-sort-toolbar :is(.account-sort-select, .account-sort-direction):hover:enabled { background: var(--home-hover); }
+}
+
+
+/* Retain one glyph so direction changes rotate instead of swapping SVGs. */
+.account-sort-direction .sort-direction-glyph {
+  transform: rotate(0deg);
+  transition: transform var(--orbilap-motion-ui) var(--ease-in-out);
+}
+.account-sort-direction[data-direction="descending"] .sort-direction-glyph { transform: rotate(180deg); }
+.account-sort-direction[data-motion="keyboard"] .sort-direction-glyph { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .account-sort-direction .sort-direction-glyph { transition: none; }
+}

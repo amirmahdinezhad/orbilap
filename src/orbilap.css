@@ -1,0 +1,649 @@
+/* Orbilap's shared palette and appearance layer for the existing Radix controls.
+ * Adapted from the owner-supplied portable palette and style showcase; original
+ * source provenance is retained in Git history before this namespace cleanup.
+ * Namespaced tokens avoid collisions with Orbilap's text-valued --muted role. */
+:root {
+
+  --orbilap-background: #ededed;
+  --orbilap-foreground: #242424;
+  --orbilap-surface: #f7f7f7;
+  --orbilap-card: #ffffff;
+  --orbilap-card-foreground: #242424;
+  --orbilap-popover: #ffffff;
+  --orbilap-popover-foreground: #242424;
+  --orbilap-popover-border: rgb(0 0 0 / 0.12);
+  --orbilap-primary: #303030;
+  --orbilap-primary-foreground: #ffffff;
+  --orbilap-secondary: #dadada;
+  --orbilap-secondary-foreground: #303030;
+  --orbilap-muted: #dedede;
+  --orbilap-muted-foreground: #606060;
+  --orbilap-accent: #cecece;
+  --orbilap-accent-foreground: #242424;
+  --orbilap-destructive: #b54343;
+  --orbilap-border: #c8c8c8;
+  --orbilap-input: #939393;
+  --orbilap-ring: #737373;
+  --orbilap-radius: 1rem;
+  --orbilap-segment-track: #d2d2d2;
+  --orbilap-segment-selection: #ffffff;
+  --orbilap-segment-sheen: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.24),
+    rgb(255 255 255 / 0.035) 38%,
+    rgb(255 255 255 / 0.015) 62%,
+    rgb(255 255 255 / 0.12)
+  );
+  --orbilap-segment-edge: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.64),
+    rgb(255 255 255 / 0.052) 45%,
+    rgb(255 255 255 / 0.58)
+  );
+  --orbilap-segment-edge-fade: linear-gradient(
+    90deg,
+    transparent,
+    #000 28%,
+    #000 72%,
+    transparent
+  );
+  --orbilap-segment-shadow: 0 2px 6px rgb(0 0 0 / 0.065);
+  --orbilap-reading-tray: #e1e1e1;
+  --orbilap-motion-fast: 120ms;
+  --orbilap-motion-ui: 180ms;
+  --orbilap-motion-hover: 200ms;
+  --orbilap-motion-popup: 220ms;
+  --orbilap-motion-exit: 140ms;
+  --orbilap-motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --orbilap-shadow-control: 0 1px 3px rgb(0 0 0 / 0.09);
+  --orbilap-shadow-panel: 0 4px 16px -8px rgb(0 0 0 / 0.12);
+  --orbilap-shadow-popover:
+    0 4px 8px -2px rgb(0 0 0 / 0.12), 0 12px 28px -4px rgb(0 0 0 / 0.16);
+  --orbilap-shadow-dialog:
+    0 8px 18px -12px rgb(0 0 0 / 0.14), 0 24px 48px -24px rgb(0 0 0 / 0.24);
+
+}
+:root:not([data-theme="light"]) {
+
+  --orbilap-background: #0c0c0c;
+  --orbilap-foreground: #f2f2f2;
+  --orbilap-surface: #141414;
+  --orbilap-card: #1c1c1c;
+  --orbilap-card-foreground: #f2f2f2;
+  --orbilap-popover: #242424;
+  --orbilap-popover-foreground: #f2f2f2;
+  --orbilap-popover-border: rgb(255 255 255 / 0.12);
+  --orbilap-primary: #e8e8e8;
+  --orbilap-primary-foreground: #202020;
+  --orbilap-secondary: #2a2a2a;
+  --orbilap-secondary-foreground: #f2f2f2;
+  --orbilap-muted: #242424;
+  --orbilap-muted-foreground: #a3a3a3;
+  --orbilap-accent: #303030;
+  --orbilap-accent-foreground: #f2f2f2;
+  --orbilap-destructive: #f3a3a3;
+  --orbilap-border: #333333;
+  --orbilap-input: #6c6c6c;
+  --orbilap-ring: #a3a3a3;
+  --orbilap-segment-track: #191919;
+  --orbilap-segment-selection: rgb(255 255 255 / 0.04);
+  --orbilap-segment-sheen: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.09),
+    rgb(255 255 255 / 0.02) 38%,
+    rgb(255 255 255 / 0.01) 62%,
+    rgb(255 255 255 / 0.045)
+  );
+  --orbilap-segment-edge: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.34),
+    rgb(255 255 255 / 0.016) 45%,
+    rgb(255 255 255 / 0.18)
+  );
+  --orbilap-segment-shadow: 0 2px 6px rgb(0 0 0 / 0.22);
+  --orbilap-reading-tray: color-mix(in srgb, var(--orbilap-muted) 65%, transparent);
+  --orbilap-shadow-control: 0 1px 3px rgb(0 0 0 / 0.24);
+  --orbilap-shadow-panel:
+    0 4px 16px -8px rgb(0 0 0 / 0.32), inset 0 1px 0 rgb(255 255 255 / 0.035);
+  --orbilap-shadow-popover:
+    0 4px 8px -2px rgb(0 0 0 / 0.3), 0 12px 28px -4px rgb(0 0 0 / 0.45);
+  --orbilap-shadow-dialog:
+    inset 0 1px 0 rgb(255 255 255 / 0.1), 0 8px 16px -8px rgb(0 0 0 / 0.3),
+    0 32px 64px -24px rgb(0 0 0 / 0.7);
+
+}
+
+/* Apply aliases at every existing token boundary, including body portals. */
+:root, [data-theme="light"], #root, #root:has(> .home-header),
+[data-theme="light"] #root:has(> .home-header),
+.ak-dialog, .workspace-setup, .workspace-picker-panel, .ui-select-content {
+  --home-bg: var(--orbilap-background);
+  --home-surface: var(--orbilap-card);
+  --home-surface-top: var(--orbilap-surface);
+  --home-selected-surface: var(--orbilap-card);
+  --home-picker: var(--orbilap-surface);
+  --home-text: var(--orbilap-foreground);
+  --home-muted: var(--orbilap-muted-foreground);
+  --home-inset: var(--orbilap-muted);
+  --home-border: var(--orbilap-border);
+  --home-divider: var(--orbilap-border);
+  --home-hover: var(--orbilap-accent);
+  --home-track: color-mix(in srgb, var(--orbilap-primary) 20%, transparent);
+  --home-focus: var(--orbilap-ring);
+  --home-action: var(--orbilap-primary);
+  --home-add-fill: var(--orbilap-primary);
+  --home-primary-ink: var(--orbilap-primary-foreground);
+  --home-active: var(--orbilap-primary);
+  --home-healthy: var(--orbilap-primary);
+  --home-danger: var(--orbilap-destructive);
+  --home-scrim: rgb(0 0 0 / 60%);
+  --home-scrim-blur: 7px;
+  --home-sheet-radius: 28px;
+  --home-group-radius: 16px;
+  --home-shadow: var(--orbilap-shadow-panel);
+  --home-segment-fill: var(--orbilap-segment-selection);
+  --home-segment-ink: var(--orbilap-foreground);
+  --workspace-control: var(--orbilap-muted);
+  --workspace-active-control: var(--orbilap-secondary);
+  --workspace-active-ink: var(--orbilap-foreground);
+  --workspace-active-edge: var(--orbilap-border);
+  --workspace-card-edge: transparent;
+  --bg: var(--orbilap-background);
+  --card: var(--orbilap-card);
+  --raised: var(--orbilap-secondary);
+  --raised-dark: var(--orbilap-muted);
+  --inset: var(--orbilap-muted);
+  --fg: var(--orbilap-foreground);
+  --title: var(--orbilap-foreground);
+  --muted: var(--orbilap-muted-foreground);
+  --line: var(--orbilap-border);
+  --inset-line: var(--orbilap-border);
+  --accent: var(--orbilap-primary);
+  --accent-hover: var(--orbilap-foreground);
+  --accent-bg: var(--orbilap-accent);
+  --accent-action: var(--orbilap-primary);
+  --accent-action-hover: var(--orbilap-primary);
+  --danger: var(--orbilap-destructive);
+  --shadow-sheet: var(--orbilap-shadow-dialog);
+  --shadow-popover: var(--orbilap-shadow-popover);
+  --ui-radius: 14px;
+  --radius-s: 14px;
+  --radius-m: 16px;
+  --control-h: 36px;
+  --control-motion: var(--orbilap-motion-ui);
+  --popup-duration: var(--orbilap-motion-popup);
+  --ease-out: var(--orbilap-motion-ease-out);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font);
+}
+:where(svg.ak-icon[viewBox="0 0 24 24"]) [stroke="currentColor"][stroke-width] { stroke-width: 2.15; }
+.home-header svg.ak-icon[viewBox="0 0 24 24"] [stroke="currentColor"][stroke-width] { stroke-width: 1.5; }
+.account-sort-menu svg.ak-icon[viewBox="0 0 24 24"] [stroke="currentColor"][stroke-width] { stroke-width: 1.5; }
+.home-accounts .account-card,
+.home-accounts .account-card.is-active,
+.workspace-current-card {
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--home-card-radius);
+  background: var(--orbilap-card);
+  box-shadow: var(--orbilap-shadow-panel);
+}
+.home-accounts .account-card.is-disconnected { box-shadow: var(--orbilap-shadow-panel), inset 0 0 0 1px var(--home-warning); }
+/* Provider reset notices share the home cards' material and neutral controls. */
+.workspace-accounts > .codex-reset-notice {
+  gap: 10px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--home-card-radius);
+  background: var(--orbilap-card);
+  box-shadow: var(--orbilap-shadow-panel);
+}
+.codex-reset-mark {
+  border-radius: 12px;
+  background: var(--orbilap-muted);
+}
+.codex-reset-mark svg.ak-icon[viewBox="0 0 24 24"] [stroke="currentColor"][stroke-width] { stroke-width: 1.5; }
+.codex-reset-chance {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--orbilap-muted);
+  font-variant-numeric: tabular-nums;
+}
+.home-accounts .codex-reset-close.ui-button {
+  border-radius: 50%;
+  background: var(--orbilap-muted);
+  color: var(--orbilap-muted-foreground);
+}
+.home-accounts .codex-reset-close.ui-button::before { background: var(--orbilap-accent); }
+.home-accounts .codex-reset-close.ui-button:is(:hover, :active):enabled { color: var(--orbilap-foreground); }
+.home-accounts .account-card .account-monogram,
+.home-header .workspace-mark { background: var(--orbilap-muted); }
+.home-accounts .account-card .account-active-label { color: var(--home-signal); }
+/* One material for every modal, including nested confirmations and the workspace picker.
+ * Keep blur static; existing presence animations fade the overlay only. */
+.ak-backdrop, .workspace-picker-overlay {
+  background: var(--home-scrim);
+  -webkit-backdrop-filter: blur(var(--home-scrim-blur));
+  backdrop-filter: blur(var(--home-scrim-blur));
+}
+.ak-dialog, .ak-dialog:is(.limit-switch-card, .workspace-action-popup, .discard-confirm),
+.workspace-picker-panel {
+  border: 0;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--orbilap-surface) 85%, transparent);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--orbilap-shadow-dialog);
+}
+.ak-dialog { padding: 24px; width: calc(100% - 24px); max-height: calc(100dvh - 24px); }
+.ak-dialog.settings-card { height: auto; padding-bottom: 12px; }
+.ak-dialog.settings-card .app-modal-body { flex: 0 1 auto; }
+.ak-dialog.discard-confirm { border-radius: 24px; }
+.ak-dialog .modal-head { margin-bottom: 24px; }
+.ak-dialog .ak-heading { font-size: 18px; font-weight: 600; letter-spacing: -.45px; }
+.ak-dialog :is(.settings-group, .account-preference-section, .update-card, .modal-detail) {
+  padding: 16px; border: 0; border-radius: 16px;
+  background: var(--orbilap-card); box-shadow: var(--orbilap-shadow-panel);
+}
+.ak-dialog .settings-group:has(.ui-switch) { padding: 4px 16px; }
+.ak-dialog .setting-desc { font-size: 12px; line-height: 1.625; }
+.ak-dialog .ui-button, .workspace-setup .ui-button, .ui-button {
+  min-height: var(--button-min-height, 36px); border-radius: 14px;
+  transition-duration: var(--orbilap-motion-fast);
+}
+.ui-button-sm { --button-min-height: 32px; }
+/* Icon-only actions are circles on every surface, including portaled dialogs.
+ * Keep each surface’s square hit area and existing input/motion feedback. */
+:root .ui-button:is(.ui-button-icon, .ui-button-icon-sm, .icon-only) {
+  border-radius: 50%;
+}
+:root .ui-button:is(.ui-button-icon, .ui-button-icon-sm, .icon-only)::before {
+  border-radius: inherit;
+}
+.ak-dialog .ui-button-primary, .workspace-setup .ui-button-primary {
+  box-shadow: var(--orbilap-shadow-control);
+}
+.workspace-picker-panel .popup-close.ui-button {
+  width: 32px; height: 32px; min-height: 32px; border-radius: 50%;
+  background: var(--orbilap-muted); color: var(--orbilap-muted-foreground);
+}
+.workspace-picker-panel .popup-close.ui-button:is(:hover, :active):enabled { color: var(--orbilap-foreground); }
+.ak-dialog :is(.ios-segments, .usage-choices) {
+  --segment-radius: 999px;
+  border: 0; border-radius: 999px; background: var(--orbilap-segment-track);
+}
+.ak-dialog .ios-segments::before {
+  background: var(--orbilap-segment-sheen), var(--orbilap-segment-selection);
+  box-shadow: var(--orbilap-segment-shadow), inset 0 0 0 1px color-mix(in srgb, var(--orbilap-foreground) 8%, transparent);
+  backdrop-filter: blur(4px);
+}
+.ak-dialog button.ui-switch { width: 40px; height: 24px; padding: 2px; background: var(--orbilap-input); }
+.ak-dialog button.ui-switch[data-state="checked"] { background: var(--orbilap-primary); }
+.ak-dialog button.ui-switch .ui-switch-thumb { width: 20px; height: 20px; background: var(--orbilap-foreground); box-shadow: var(--orbilap-shadow-control); transition: transform var(--orbilap-motion-ui) var(--ease-out); }
+[data-theme="light"] .ak-dialog button.ui-switch .ui-switch-thumb { background: var(--orbilap-background); }
+.ak-dialog button.ui-switch[data-state="checked"] .ui-switch-thumb { background: var(--orbilap-primary-foreground); }
+.ak-dialog button.ui-radio-option {
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px;
+  width: 100%; height: auto; min-height: 46px; padding: 6px 8px;
+  border: 0; border-radius: 10px; background: transparent; color: var(--home-text);
+  text-align: start; cursor: pointer; box-shadow: none; transition: none;
+}
+.ak-dialog button.ui-radio-option::before { content: none; }
+.ak-dialog button.ui-radio-option[data-state="checked"] { background: var(--home-hover); }
+.ak-dialog button.ui-radio-option:focus-visible { outline: 2px solid var(--home-focus); outline-offset: -2px; }
+.ak-dialog button.ui-radio-option:disabled,
+[role="radiogroup"][aria-disabled="true"] button.ui-radio-option { cursor: default; }
+.ui-radio-option-mark {
+  flex: 0 0 17px; width: 17px; height: 17px; display: grid; place-items: center;
+  border: 1px solid var(--home-muted); border-radius: 50%;
+}
+.ui-radio-option[data-state="checked"] .ui-radio-option-mark { background: var(--orbilap-primary); border-color: var(--orbilap-primary); }
+.ui-radio-option-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orbilap-primary-foreground); }
+.ui-radio-option-text { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.ui-radio-option-description { color: var(--home-muted); font-size: 11px; line-height: 1.4; }
+@media (hover: hover) and (pointer: fine) {
+  .ak-dialog [role="radiogroup"]:not([aria-disabled="true"]) > button.ui-radio-option:hover:enabled:not([data-state="checked"]) {
+    background: color-mix(in srgb, var(--home-hover) 55%, transparent);
+  }
+}
+.ui-select-content { border: 0; border-radius: 16px; padding: 4px; background: var(--orbilap-popover); box-shadow: var(--orbilap-shadow-popover); }
+.ui-select-content .ui-select-item { border-radius: 12px; }
+.ak-dialog .ui-select-trigger { min-height: 36px; border: 0; border-radius: 16px; background: var(--orbilap-muted); }
+.ui-tooltip { border: 0; border-radius: 14px; padding: 6px 12px; background: var(--orbilap-foreground); color: var(--orbilap-background); font-size: 12px; }
+.ui-progress { height: 8px; border-radius: 999px; background: var(--home-track); }
+.ui-progress-indicator { border-radius: inherit; background: var(--orbilap-primary); }
+[data-sonner-toast] { border: 0 !important; border-radius: var(--orbilap-radius) !important; background: color-mix(in srgb, var(--orbilap-popover) 95%, transparent) !important; color: var(--orbilap-foreground) !important; box-shadow: var(--orbilap-shadow-dialog) !important; backdrop-filter: blur(12px); }
+/* Keep notification surfaces neutral; status color belongs only to the icon. */
+[data-sonner-toast][data-type="warning"] [data-icon] { color: var(--home-warning); }
+[data-sonner-toast][data-type="info"] [data-icon] { color: var(--info-text); }
+/* Preserve Orbilap's owner-requested Tab suppression and outline policy.
+ * Existing programmatic focus, Enter, arrows and Escape remain unchanged. */
+[data-keyboard="true"] *, [data-keyboard="true"] *::before, [data-keyboard="true"] *::after { transition-duration: 0ms !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; }
+  .ak-dialog button.ui-switch .ui-switch-thumb { transition: none; }
+}
+@media (max-width: 380px) {
+  .ak-dialog { padding: 18px; }
+  .home-accounts .account-card { padding: 12px 14px; }
+}
+/* Match the composed settings card even where legacy section rules are more specific. */
+.ak-dialog.settings-card .settings-general > .settings-group,
+.ak-dialog .menubar-colors > .settings-group {
+  border: 0; border-radius: 16px; background: var(--orbilap-card);
+  box-shadow: var(--orbilap-shadow-panel);
+}
+.ak-dialog[data-state="closed"], .ak-backdrop[data-state="closed"] { animation-duration: var(--orbilap-motion-exit); }
+:root[data-keyboard="true"] :is(.ak-dialog, .ak-backdrop, .ui-select-content, .ui-tooltip) { animation: none !important; }
+@keyframes surface-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes surface-exit { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.98); } }
+
+/* Active identity keeps Orbilap's green status treatment within Orbilap geometry. */
+.home-accounts .account-card.is-active:not(.is-disconnected),
+.workspace-current-card {
+  --home-selected-surface: #151e18;
+  --workspace-active-control: #20352a;
+  --workspace-active-ink: #c8f3df;
+  --workspace-active-edge: #2a382f;
+  background: var(--home-selected-surface);
+  box-shadow: var(--orbilap-shadow-panel), inset 0 0 0 1px var(--workspace-active-edge);
+}
+[data-theme="light"] :is(.home-accounts .account-card.is-active:not(.is-disconnected), .workspace-current-card) {
+  --home-selected-surface: #eaf4ed;
+  --workspace-active-control: #d7ebe0;
+  --workspace-active-ink: #215f43;
+  --workspace-active-edge: #c6dbce;
+}
+.home-accounts .account-card.is-active:not(.is-disconnected) :is(.account-monogram, .account-active-label, .plan-badge),
+.workspace-current-card > .workspace-mark {
+  background: var(--workspace-active-control);
+  color: var(--workspace-active-ink);
+}
+
+
+/* Shared native scrollbars: a 4px painted thumb within a 6px drag rail. */
+:root {
+  --scrollbar-thumb: color-mix(in srgb, var(--orbilap-muted-foreground) 42%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--orbilap-muted-foreground) 64%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--orbilap-muted-foreground) 82%, transparent);
+}
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+/* Use pixel sizing in WebKit; standard scrollbar properties otherwise override it. */
+@supports selector(::-webkit-scrollbar) {
+  * { scrollbar-width: auto; scrollbar-color: auto; }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    min-width: 24px; min-height: 24px;
+    border: 1px solid transparent; border-radius: 999px;
+    background: var(--scrollbar-thumb); background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-button { display: none; }
+  @media (hover: hover) and (pointer: fine) {
+    *::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
+  }
+  *::-webkit-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-active); }
+}
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  *::-webkit-scrollbar-thumb { background-color: ButtonText; }
+}
+
+
+/* Home keeps native scrolling without a visible scrollbar. */
+.home-accounts.providers { scrollbar-width: none; }
+.home-accounts.providers::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+
+/* Selection feedback stays mounted so a quick reversal continues from its frame. */
+:root { --checkbox-motion: 280ms; }
+:root .ui-checkbox .ui-checkbox-indicator {
+  opacity: 1; transform: scale(1);
+  transition: opacity var(--checkbox-motion) var(--ease-out), transform var(--checkbox-motion) var(--ease-out);
+}
+:root .ui-checkbox .ui-checkbox-indicator[data-state="unchecked"] { opacity: 0; transform: scale(.9); }
+:root :is(.workspace-settings-card, .setup-account-option) button.ui-checkbox::after {
+  transition: opacity var(--checkbox-motion) var(--ease-out);
+}
+:root .checkbox-label { font-weight: 500; transition: font-weight var(--checkbox-motion) var(--ease-out); }
+:root .checkbox-row:has(.ui-checkbox[data-state="checked"]) .checkbox-label { font-weight: 650; }
+:root :is(.is-keyboard, [data-motion="keyboard"]) :is(.ui-checkbox-indicator, .checkbox-label),
+:root :is(.is-keyboard, [data-motion="keyboard"]) button.ui-checkbox::after { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root .ui-checkbox .ui-checkbox-indicator[data-state="unchecked"] { transform: none; }
+  :root .checkbox-label { transition: none; }
+}
+
+/* Unselected choices brighten on hover; selected choices stay fully legible. */
+:root label:has(.ui-checkbox:enabled) {
+  cursor: pointer;
+  opacity: .6;
+  transition: opacity 160ms ease;
+}
+:root label:has(.ui-checkbox:disabled) { cursor: default; }
+:root label:has(.ui-checkbox:enabled) .checkbox-label { color: var(--home-text); }
+@media (hover: hover) and (pointer: fine) {
+  :root label:has(.ui-checkbox:enabled):hover { opacity: .85; }
+}
+:root label:has(.ui-checkbox:enabled:focus-visible) { opacity: .85; }
+:root label:has(.ui-checkbox:enabled[data-state="checked"]),
+:root label:has(.ui-checkbox:enabled):active,
+:root label:has(.ui-checkbox:enabled:active) { opacity: 1; }
+:root label:has(.ui-checkbox:focus-visible),
+:root :is(.is-keyboard, [data-motion="keyboard"]) label:has(.ui-checkbox) { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root label:has(.ui-checkbox) { transition: none; }
+}
+:root button.ui-checkbox::before { inset: 0; pointer-events: none; }
+:root button.ui-checkbox:enabled { cursor: pointer; }
+
+/* Keep Updates stacked vertically while using Orbilap action styling. */
+.ak-dialog .update-check { width: 100%; min-height: 40px; padding: 9px 12px; gap: 8px; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+.update-check svg.ak-icon[viewBox="0 0 24 24"] [stroke="currentColor"][stroke-width],
+.update-primary svg.ak-icon[viewBox="0 0 24 24"] [stroke="currentColor"][stroke-width] { stroke-width: 1.5; }
+.ak-dialog .update-primary { width: 100%; gap: 8px; font-size: 12px; font-weight: 500; }
+.update-skip { align-self: center; }
+
+/* Match home card actions while retaining the labeled vertical update action. */
+.ak-dialog .update-check {
+  --round-button-fill: var(--workspace-control);
+  border: 0;
+  border-radius: 999px;
+  background: var(--round-button-fill);
+  color: var(--home-action);
+  box-shadow: none;
+  transition: background-color var(--home-motion-feedback) ease, transform var(--home-motion-press) var(--ease-out);
+}
+.ak-dialog .update-check:focus-visible {
+  outline: 2px solid var(--home-focus);
+  outline-offset: 1px;
+  transition: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ak-dialog .update-check:hover:enabled {
+    background: color-mix(in srgb, var(--round-button-fill) 85%, var(--home-text));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ak-dialog .update-check { transition: none; }
+  .ak-dialog .update-check:active:enabled { transform: none; }
+}
+
+.ui-button-destructive.auth-file-remove {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 50%;
+}
+
+/* One painted surface prevents a seam between a hover layer and the border. */
+:root .ui-button.ui-button-destructive {
+  --destructive-ink: var(--home-danger);
+  --destructive-base: var(--home-inset);
+  --destructive-strength: 9%;
+  background: color-mix(in srgb, var(--destructive-ink) var(--destructive-strength), var(--destructive-base));
+  color: var(--destructive-ink);
+  border: 0;
+  box-shadow: none;
+  transition: background-color 160ms ease;
+}
+:root[data-theme="light"] .ui-button.ui-button-destructive {
+  --destructive-ink: #b43e4b;
+}
+:root .ui-button-destructive.link-btn { --destructive-base: transparent; --destructive-strength: 0%; }
+:root .ui-button-destructive.home-quit { --destructive-base: var(--round-button-fill); --destructive-strength: 0%; }
+:root .ui-button.ui-button-destructive::before,
+:root .ui-button.ui-button-destructive::after { content: none; }
+:root .ui-button.ui-button-destructive:is(:hover, :active):enabled {
+  background: color-mix(in srgb, var(--destructive-ink) var(--destructive-strength), var(--destructive-base));
+  color: var(--destructive-ink);
+  border: 0;
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
+  text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  :root .ui-button.ui-button-destructive:hover:enabled { --destructive-strength: 16%; }
+}
+:root .ui-button.ui-button-destructive:active:enabled { --destructive-strength: 22%; }
+
+/* Account flows share the home panel's material and quiet hierarchy. */
+.account-enrollment .enrollment-step-heading { gap: 6px; margin-block: 2px 12px; }
+.account-enrollment .enrollment-step-heading h3 { font-size: 21px; line-height: 27px; letter-spacing: -.4px; }
+.account-enrollment .enrollment-choices { gap: 8px; }
+:is(.workspace-setup, .ak-dialog) .enrollment-choices .enrollment-choice {
+  min-height: 76px; padding: 14px; gap: 12px; border-radius: var(--home-group-radius, 16px);
+  border: 1px solid var(--home-divider); background: var(--home-surface);
+  box-shadow: var(--orbilap-shadow-panel); text-align: start;
+}
+.enrollment-choice > .enrollment-choice-icon {
+  display: grid !important; place-items: center; flex: 0 0 42px !important;
+  width: 42px; height: 42px; border-radius: 14px; background: var(--home-inset); color: var(--home-text);
+}
+.enrollment-choice-icon .plogo { width: 26px; height: 26px; }
+.enrollment-choice > span:not(.enrollment-choice-icon) { min-width: 0; }
+.enrollment-choice strong { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px; font-size: 14px; line-height: 19px; }
+.enrollment-choice span span { font-size: 12px; line-height: 17px; }
+.provider-local-heading h3 { display: flex; align-items: center; gap: 7px; }
+.setup-selection-tools > .ui-button.ui-button-icon-sm {
+  width: var(--control-h);
+  height: var(--control-h);
+  min-height: var(--control-h);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  transition: background-color var(--orbilap-motion-fast) var(--ease-out);
+}
+.setup-selection-tools > .ui-button.ui-button-icon-sm:active:enabled { background: var(--control-pressed); }
+.setup-selection-tools > .ui-button.ui-button-icon-sm:focus-visible {
+  outline: 2px solid var(--home-focus);
+  outline-offset: 1px;
+  transition: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .setup-selection-tools > .ui-button.ui-button-icon-sm:hover:enabled:not(:active) { background: var(--home-hover); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .setup-selection-tools > .ui-button.ui-button-icon-sm { transition: none; }
+}
+.account-enrollment .enrollment-help { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--home-divider); padding-top: 10px; }
+.enrollment-help-label { display: flex; align-items: center; gap: 2px; min-width: 0; color: var(--home-muted); font-size: 12px; }
+.enrollment-help > .ui-button { flex-shrink: 0; }
+.enrollment-help-dialog p { margin: 0; color: var(--home-muted); font-size: 13px; line-height: 1.6; }
+.account-safety-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--home-muted); font-size: 12px; line-height: 18px; }
+.account-safety-note > svg { flex-shrink: 0; margin-top: 2px; }
+.removal-identity { display: flex; align-items: center; gap: 12px; min-width: 0; text-align: start; }
+.removal-identity > .plogo { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 10px; border-radius: 15px; background: var(--home-inset); }
+.removal-identity > div { display: grid; gap: 3px; min-width: 0; }
+.removal-identity strong { color: var(--home-text); font-size: 15px; line-height: 21px; font-weight: 650; overflow-wrap: anywhere; }
+.removal-identity span { color: var(--home-muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.ak-dialog.account-removal-card .app-modal-body { display: grid; gap: 20px; }
+.confirmation-actions { padding-top: 4px; }
+.ak-dialog .confirmation-actions > .ui-button { align-self: stretch; width: 100%; min-height: 44px; height: auto; padding: 12px; white-space: normal; }
+.confirmation-symbol { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 17px; background: color-mix(in srgb, var(--home-danger) 9%, transparent); color: var(--home-danger); margin-bottom: 16px; }
+.ak-dialog.discard-confirm .ak-heading { text-align: start; }
+/* One compact navigation bar per sheet; the active step owns its title. */
+.ak-dialog .modal-head,
+.ak-dialog .modal-head:has(.modal-back) {
+  display: flex; align-items: center; gap: 10px; min-height: 36px;
+  padding: 0; margin: 0 0 16px;
+}
+.ak-dialog .modal-head .ak-heading {
+  flex: 1; min-width: 0; margin: 0; font-size: 17px; line-height: 22px;
+  font-weight: 650; letter-spacing: -.25px; text-align: start; overflow-wrap: anywhere;
+}
+.ak-dialog .modal-head .ak-heading:focus { outline: none; }
+/* These in-flow buttons paint their own hover background. */
+.ak-dialog .modal-head :is(.modal-back, .popup-close).ui-button {
+  position: static; flex: 0 0 36px; width: 36px; height: 36px; min-height: 36px;
+  padding: 0; border: 0; border-radius: 50%; transform: none;
+  background: var(--home-inset); color: var(--home-muted);
+  transition: background-color var(--orbilap-motion-fast) ease-out, color var(--orbilap-motion-fast) ease-out;
+}
+.ak-dialog .modal-head :is(.modal-back, .popup-close).ui-button:is(:hover, :active):enabled {
+  transform: none; color: var(--home-text);
+}
+.modal-provider-mark, .modal-page-symbol { display: grid; place-items: center; flex-shrink: 0; }
+.modal-provider-mark, .modal-provider-mark > .plogo { width: 28px; height: 28px; }
+.modal-page-symbol { width: 36px; height: 36px; border-radius: 50%; background: var(--home-inset); color: var(--home-text); }
+.page-header { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 16px; }
+.page-header h2 { margin: 0; flex: 1; min-width: 0; font-size: 18px; line-height: 24px; font-weight: 650; text-align: start; }
+.page-header .page-back { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--home-inset); }
+.workspace-setup-wizard .workspace-form-actions { justify-content: flex-end; }
+@media (hover: hover) and (pointer: fine) {
+  .ak-dialog .modal-head :is(.modal-back, .popup-close).ui-button:hover:enabled { background: var(--home-hover); }
+}
+.ak-dialog .modal-head :is(.modal-back, .popup-close).ui-button:focus-visible,
+:root[data-keyboard="true"] .page-back:focus-visible {
+  outline: 2px solid var(--home-focus); outline-offset: 3px; transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ak-dialog .modal-head :is(.modal-back, .popup-close).ui-button { transition: none; }
+}
+
+/* Action and cancellation stay together, including inside narrow tray dialogs. */
+.action-row,
+.ak-dialog .action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px;
+}
+.action-row > .ui-button,
+.ak-dialog .action-row > .ui-button {
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--ui-radius);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.action-row > .ui-button:only-child { grid-column: 1 / -1; }
+.workspace-current-card .workspace-rename-actions.action-row > .ui-button {
+  min-height: 32px;
+  padding: 5px 10px;
+}
+
+/* Keep disabled actions visibly muted, with variant-independent readable ink. */
+:root .ui-button:is(:disabled, [aria-disabled="true"]) {
+  opacity: .72;
+  color: var(--orbilap-muted-foreground);
+  background: var(--orbilap-secondary);
+  box-shadow: none;
+}
+:root .ui-button:is(.ui-button-ghost, .ui-button-link):is(:disabled, [aria-disabled="true"]) {
+  background: transparent;
+}
+
+
+/* Confirmation identity also serves workspace removal. */
+.removal-identity > .workspace-mark {
+  width: 44px; height: 44px; background: var(--home-inset);
+  color: var(--home-text); font-size: 15px;
+}

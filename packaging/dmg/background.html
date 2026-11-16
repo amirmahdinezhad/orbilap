@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 660px; height: 400px; overflow: hidden; }
+  body {
+    font-family: "Figtree", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    /* Soft orbital arcs stay outside the title, icon labels and transfer path. */
+    background:
+      radial-gradient(ellipse 236px 192px at -25px -40px,
+        transparent 69%, #f9fafc 79%, #edf2f8 88%, #f7f9fc 95%, transparent 102%),
+      radial-gradient(ellipse 288px 234px at 704px 463px,
+        transparent 68%, #fafbfd 78%, #e9eff6 89%, #f5f8fb 96%, transparent 102%),
+      radial-gradient(ellipse 192px 140px at 660px 400px, #f7f9fc, transparent 100%),
+      #ffffff;
+    color: #1c1a18;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+  }
+  .title {
+    position: absolute; left: 0; right: 0; top: 40px;
+    text-align: center;
+    font-size: 30px; font-weight: 600; letter-spacing: -0.2px;
+    color: #1c1a18;
+  }
+  .subtitle {
+    position: absolute; left: 0; right: 0; top: 82px;
+    text-align: center;
+    font-size: 13px; font-weight: 400; color: #59616c;
+  }
+  .arrow {
+    position: absolute; left: 0; right: 0; top: 152px;
+    display: flex; justify-content: center;
+  }
+  .rule {
+    /* Finder's title bar reduces the visible height of the background. */
+    position: absolute; left: 0; right: 0; bottom: 56px;
+    text-align: center;
+    font-size: 11px; line-height: 14px; color: #59616c;
+  }
+</style>
+</head>
+<body>
+  <div class="title">Orbilap</div>
+  <div class="subtitle">Drag to Applications to install</div>
+  <div class="arrow">
+    <svg width="160" height="36" viewBox="0 0 160 36" fill="none" aria-hidden="true">
+      <path d="M2 18h144m-12-10 12 10-12 10" stroke="#000000" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="rule">Requires macOS 12 or later</div>
+</body>
+</html>
