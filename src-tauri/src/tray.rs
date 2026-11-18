@@ -1,4 +1,4 @@
-//! Card-matched charcoal Orbilap mark and usage metrics, tinted by enabled usage warnings.
+//! Native menu-bar mark and usage metrics, tinted by macOS or enabled usage warnings.
 
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
@@ -10,8 +10,11 @@ use crate::settings::{canonical_account_window, AppSettings, CodexAccountPrefere
 
 // The 46×36 canvas leaves room for the tray compositor and centers the mark.
 static ICON: &[u8] = include_bytes!("../icons/tray-template.png");
-/// Match the dark home card surface (#1c1c1c); Near limit warnings can override it.
-pub const DEFAULT_ACCENT: [u8; 3] = [28, 28, 28];
+pub const TEMPLATE_INK: [u8; 3] = [0; 3];
+pub const DEFAULT_ACCENT: [u8; 3] = [28; 3];
+const DARK_BAR_INK: [u8; 3] = [245; 3];
+pub const MENU_BAR_TITLE: &str = if cfg!(all(debug_assertions, target_os = "macos")) { "DEV" } else { "" };
+pub const MENU_BAR_NAME: &str = if cfg!(all(debug_assertions, target_os = "macos")) { "Orbilap Dev" } else { "Orbilap" };
 
 /// Tint the original mark's RGB while preserving every alpha-mask pixel.
 pub fn render(accent: [u8; 3]) -> Image<'static> {
@@ -369,7 +372,7 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
         let state = state.lock().unwrap_or_else(|e| e.into_inner());
         let now = chrono::Utc::now();
         let light_menu_bar = menu_bar_is_light(&handle);
-        let (mut labels, icon_accent) = menu_bar_labels(&state.settings, &state.profiles, now, light_menu_bar);
+        let (mut labels, mut icon_accent) = menu_bar_labels(&state.settings, &state.profiles, now, light_menu_bar);
         if state.settings.active_workspace().is_none() && state.settings.menu_bar_enabled && state.settings.menu_bar_provider != MenuBarProvider::Codex && !state.settings.multi_profile.enabled {
             let mut windows = Vec::new();
             if state.settings.usage_appearance.session_enabled {
@@ -441,7 +444,14 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
             let tooltip = labels.iter().map(|label| format!("{}: {}", crate::tray_text::provider_name(label.provider.as_deref()), label.text)).collect::<Vec<_>>().join("\n");
             #[cfg(debug_assertions)]
             let tooltip = if claude_preview_enabled() { format!("Demo usage\n{tooltip}") } else { tooltip };
-            let _ = tray.set_tooltip(Some(if tooltip.is_empty() { "Orbilap" } else { &tooltip }));
+            let tooltip = if tooltip.is_empty() {
+                MENU_BAR_NAME.to_owned()
+            } else if MENU_BAR_TITLE.is_empty() {
+                tooltip
+            } else {
+                format!("{MENU_BAR_NAME}\n{tooltip}")
+            };
+            let _ = tray.set_tooltip(Some(tooltip));
             let monochrome = if state.settings.multi_profile.enabled {
                 state.settings.multi_profile.monochrome
             } else {
@@ -452,19 +462,25 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
                 .map(|v| if v.show_provider { format!("{} {}", crate::tray_text::provider_name(v.provider.as_deref()), v.text) } else { v.text.clone() })
                 .collect::<Vec<_>>()
                 .join("  ");
+            let template = cfg!(target_os = "macos")
+                && apply_menu_bar_ink(&mut labels, &mut icon_accent, light_menu_bar);
             if labels.is_empty() {
-                let _ = tray.set_title(Some(""));
-                let _ = tray.set_icon(Some(render(icon_accent)));
-                let _ = tray.set_icon_as_template(false);
-            } else if let Some(image) = crate::tray_text::render(&labels, monochrome, icon_accent, state.settings.active_workspace().map(|w| w.usage.menu_bar_style).unwrap_or_default(), state.settings.active_workspace().is_none_or(|w| w.usage.show_app_logo)) {
-                let _ = tray.set_title(Some(""));
-                let _ = tray.set_icon(Some(image));
-                // Template mode would replace the chosen accent with the OS tint.
-                let _ = tray.set_icon_as_template(false);
+                let _ = tray.set_title(Some(MENU_BAR_TITLE));
+                let _ = tray.set_icon_with_as_template(Some(render(icon_accent)), template);
+            } else if let Some(image) = crate::tray_text::render(&labels, monochrome, icon_accent, state.settings.active_workspace().map(|w| w.usage.menu_bar_style).unwrap_or_default(), state.settings.active_workspace().is_none_or(|w| w.usage.show_app_logo), template) {
+                let _ = tray.set_title(Some(MENU_BAR_TITLE));
+                let _ = tray.set_icon_with_as_template(Some(image), template);
             } else {
-                let _ = tray.set_icon(Some(render(icon_accent)));
-                let _ = tray.set_icon_as_template(false);
-                let _ = tray.set_title(Some(fallback));
+                let neutral_icon = template || icon_accent == DEFAULT_ACCENT || icon_accent == DARK_BAR_INK;
+                let fallback_template = cfg!(target_os = "macos") && neutral_icon;
+                let ink = if fallback_template { TEMPLATE_INK } else { icon_accent };
+                let _ = tray.set_icon_with_as_template(Some(render(ink)), fallback_template);
+                let title = if MENU_BAR_TITLE.is_empty() {
+                    fallback
+                } else {
+                    format!("{MENU_BAR_TITLE}  {fallback}")
+                };
+                let _ = tray.set_title(Some(title));
             }
         }
     });
@@ -846,6 +862,27 @@ fn tint_label(label: &mut crate::tray_text::Label, color: [u8; 3]) {
     for metric in &mut label.metrics { metric.color = color; }
 }
 
+/// Let AppKit recolor neutral items even when only the wallpaper changes.
+/// Colored warning images use the status button's current appearance for neutral ink.
+fn apply_menu_bar_ink(labels: &mut [crate::tray_text::Label], accent: &mut [u8; 3], light: bool) -> bool {
+    let template = *accent == DEFAULT_ACCENT && labels.iter().all(|label| {
+        label.color == DEFAULT_ACCENT
+            && label.segments.iter().all(|(_, color)| *color == DEFAULT_ACCENT)
+            && label.metrics.iter().all(|metric| metric.color == DEFAULT_ACCENT)
+    });
+    let ink = if template { TEMPLATE_INK } else if light { DEFAULT_ACCENT } else { DARK_BAR_INK };
+    let adapt = |color: &mut [u8; 3]| {
+        if *color == DEFAULT_ACCENT { *color = ink; }
+    };
+    adapt(accent);
+    for label in labels {
+        adapt(&mut label.color);
+        for (_, color) in &mut label.segments { adapt(color); }
+        for metric in &mut label.metrics { adapt(&mut metric.color); }
+    }
+    template
+}
+
 fn warning_color(used: f64) -> [u8; 3] {
     if used >= 95.0 { [255, 69, 58] } else if used >= 90.0 { [255, 159, 10] } else if used >= 75.0 { [255, 214, 10] } else { [48, 184, 107] }
 }
@@ -1159,7 +1196,7 @@ mod tests {
         assert!(labels.iter().all(|l| l.text.contains('—')), "unknown usage stays distinct from zero");
         assert!(labels[2].text.contains("Ca 1w"));
         for style in [crate::settings::MenuBarStyle::Percentages, crate::settings::MenuBarStyle::Progress, crate::settings::MenuBarStyle::ResetTimeline] {
-            assert!(crate::tray_text::render(&labels, true, DEFAULT_ACCENT, style, true).is_some());
+            assert!(crate::tray_text::render(&labels, true, DEFAULT_ACCENT, style, true, false).is_some());
         }
         settings.workspaces[0].usage.menu_bar_providers = Some(vec!["claude".into()]);
         let (labels, _) = menu_bar_labels(&settings, &profiles, now, true);
@@ -1226,7 +1263,7 @@ mod tests {
             assert_eq!(label.color, color); assert!(label.segments.iter().all(|(_, c)| *c == color)); assert!(label.metrics.iter().all(|m| m.color == color));
             if let Ok(path) = std::env::var("ORBILAP_TEST_WARNING_PALETTE") {
                 for (style_name, style) in [("percentages", crate::settings::MenuBarStyle::Percentages), ("progress", crate::settings::MenuBarStyle::Progress)] {
-                    let image = crate::tray_text::render(&[label.clone()], true, color, style, true).unwrap();
+                    let image = crate::tray_text::render(&[label.clone()], true, color, style, true, false).unwrap();
                     let name = format!("{path}-{}-{style_name}", if light { "light" } else { "dark" });
                     std::fs::write(format!("{name}.rgba"), image.rgba()).unwrap();
                     std::fs::write(format!("{name}.json"), format!("[{},{}]", image.width(), image.height())).unwrap();
@@ -1607,7 +1644,7 @@ mod tests {
         assert!(label.metrics.iter().all(|metric| metric.color==DEFAULT_ACCENT));
         for style in [crate::settings::MenuBarStyle::Percentages,crate::settings::MenuBarStyle::Progress] {
             for monochrome in [true,false] {
-                let image = crate::tray_text::render(&[label.clone()],monochrome,DEFAULT_ACCENT,style, true).unwrap();
+                let image = crate::tray_text::render(&[label.clone()],monochrome,DEFAULT_ACCENT,style, true, false).unwrap();
                 for logo in [true,false] {
                     assert!(image.rgba().chunks_exact(4).enumerate().any(|(index,p)| p[..3]==DEFAULT_ACCENT && p[3]>240 && if logo { index as u32 % image.width()<46 } else { index as u32 % image.width()>=52 }));
                 }
@@ -1625,6 +1662,41 @@ mod tests {
         }
         state.settings.active_workspace_id = None;
         assert_eq!(menu_bar_account_preferences(&state.settings, "emma", None).color,"#007aff");
+    }
+
+    #[test]
+    fn neutral_menu_bar_ink_uses_a_template_and_mixed_warnings_keep_their_color() {
+        let label = crate::tray_text::Label {
+            text: "5h —".into(),
+            provider: Some("codex".into()),
+            show_provider: true,
+            caption: Some("AC".into()),
+            color: DEFAULT_ACCENT,
+            segments: vec![("5h —".into(), DEFAULT_ACCENT)],
+            metrics: vec![crate::tray_text::Metric {
+                label: None, fraction: None, time_marker: None,
+                reset_fraction: None, color: DEFAULT_ACCENT,
+            }],
+        };
+        let warning = warning_color(96.0);
+        for light in [true, false] {
+            for has_warning in [false, true] {
+                let mut labels = vec![label.clone(), label.clone()];
+                let mut accent = if has_warning { warning } else { DEFAULT_ACCENT };
+                if has_warning { tint_label(&mut labels[1], warning); }
+
+                assert_eq!(apply_menu_bar_ink(&mut labels, &mut accent, light), !has_warning);
+                let neutral = if !has_warning { TEMPLATE_INK } else if light { DEFAULT_ACCENT } else { DARK_BAR_INK };
+                assert_eq!(accent, if has_warning { warning } else { TEMPLATE_INK });
+                assert_eq!(labels[0].color, neutral);
+                assert_eq!(labels[0].segments[0].1, neutral);
+                assert_eq!(labels[0].metrics[0].color, neutral);
+                assert_eq!(labels[1].color, if has_warning { warning } else { neutral });
+            }
+        }
+        let mut accent = DEFAULT_ACCENT;
+        assert!(apply_menu_bar_ink(&mut [], &mut accent, false));
+        assert_eq!(accent, TEMPLATE_INK);
     }
 
     #[test]
@@ -1661,7 +1733,7 @@ mod tests {
         for style in [crate::settings::MenuBarStyle::Percentages,crate::settings::MenuBarStyle::Progress] {
             let label = account_label(&state.profiles[0],&prefs,levels,true,now);
             assert_eq!(label.metrics[0].color,[255,159,10]);
-            let image = crate::tray_text::render(&[label],true,[255,159,10],style, true).unwrap();
+            let image = crate::tray_text::render(&[label],true,[255,159,10],style, true, false).unwrap();
             assert!(image.rgba().chunks_exact(4).any(|p| p[..3]==[255,159,10] && p[3]>240));
         }
         app.workspaces[0].usage.warning_thresholds = Some(vec![]);
@@ -1680,7 +1752,7 @@ mod tests {
         let orange = [255, 159, 10];
         assert_eq!(label.caption.as_deref(), Some("EB"));
         assert_eq!(label.segments[0].1, orange);
-        let image = crate::tray_text::render(&[label], true, threshold_color(96.0, &thresholds).unwrap(), crate::settings::MenuBarStyle::Percentages, true).unwrap();
+        let image = crate::tray_text::render(&[label], true, threshold_color(96.0, &thresholds).unwrap(), crate::settings::MenuBarStyle::Percentages, true, false).unwrap();
         for logo in [true, false] {
             assert!(image.rgba().chunks_exact(4).enumerate().any(|(index,pixel)| {
                 let x = index as u32 % image.width();
@@ -1749,7 +1821,7 @@ mod tests {
         assert!(label.metrics.iter().all(|metric| metric.color == red));
         let (_, icon_color) = account_warning(&profile, &prefs, &[75, 90, 95], now).unwrap();
         for style in [crate::settings::MenuBarStyle::Percentages, crate::settings::MenuBarStyle::Progress] {
-            let image = crate::tray_text::render(&[label.clone()], true, icon_color, style, true).unwrap();
+            let image = crate::tray_text::render(&[label.clone()], true, icon_color, style, true, false).unwrap();
             assert!(image.rgba().chunks_exact(4).filter(|pixel| pixel[3] == 255).all(|pixel| pixel[..3] == red), "every visible element must share the same warning hue");
         }
     }

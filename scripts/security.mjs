@@ -1,4 +1,5 @@
 import { spawnSync, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   copyFileSync,
   lstatSync,
@@ -13,6 +14,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const picomatchCve = "CVE-2026-112366";
+const chronoAdvisory = "RUSTSEC-2026-0543";
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
     cwd: root,
@@ -24,6 +27,44 @@ const run = (command, args, options = {}) => {
     throw new Error(`${command} ${args.join(" ")} failed (${result.status}).`);
   return result.stdout;
 };
+
+export function acceptsPicomatchFinding(report, version, lockDigest, registryVersion) {
+  if (version !== "1.0.1" || registryVersion !== "4.0.7" ||
+      lockDigest !== "0b5d2d09850e58e3626b3552e9dcdff3f1b8a629b31258994e49fa00e9444704") return false;
+  const findings = Object.values(report.advisories ?? {});
+  const [finding] = findings;
+  return findings.length === 1
+    && finding.module_name === "picomatch"
+    && finding.github_advisory_id === "GHSA-fc5q-39xc-vjpf"
+    && finding.patched_versions === "<0.0.0"
+    && finding.cves?.length === 1 && finding.cves[0] === picomatchCve
+    && finding.findings?.length > 0
+    && finding.findings.every(entry => entry.version === "4.0.7");
+}
+
+export function acceptsChronoWarning(version, lockDigest) {
+  return version === "1.0.1"
+    && lockDigest === "07d14ec4ebc4255b5fa44a35ac3d88985d97d194116645d0a6ce2a16fbc41016";
+}
+
+function auditJavaScript() {
+  const options = ["audit", "--audit-level=low"];
+  const { version } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+  if (version === "1.0.1") {
+    const result = spawnSync("pnpm", [...options, "--json"], { cwd: root, encoding: "utf8" });
+    if (result.status === 0) return;
+    if (result.status === 1 && result.stdout.trim()) {
+      const report = JSON.parse(result.stdout);
+      const digest = createHash("sha256").update(readFileSync(path.join(root, "pnpm-lock.yaml"))).digest("hex");
+      const registryVersion = execFileSync("pnpm", ["view", "picomatch", "version"], { cwd: root, encoding: "utf8" }).trim();
+      if (acceptsPicomatchFinding(report, version, digest, registryVersion)) {
+        console.log(`Owner accepted ${picomatchCve} for Orbilap 1.0.1 only. Continuing the full release gate.`);
+        return;
+      }
+    }
+  }
+  run("pnpm", options);
+}
 
 export function resolvedLockfile(lock, packages) {
   const names = new Set(
@@ -60,7 +101,7 @@ function main() {
       "scripts/release.test.mjs",
       "scripts/reset-data.test.mjs",
     ]);
-    run("pnpm", ["audit", "--audit-level=low"]);
+    auditJavaScript();
     const files = execFileSync(
       "git",
       ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
@@ -122,6 +163,13 @@ function main() {
       "https://github.com/RustSec/advisory-db.git",
       database,
     ]);
+    const { version } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+    const lockDigest = createHash("sha256").update(lock).digest("hex");
+    const acceptedWarning = acceptsChronoWarning(version, lockDigest)
+      ? ["--ignore", chronoAdvisory] : [];
+    if (acceptedWarning.length) {
+      console.log(`Owner accepted the ${chronoAdvisory} maintenance warning for Orbilap 1.0.1 only.`);
+    }
     run("cargo", [
       "audit",
       "--db",
@@ -129,6 +177,7 @@ function main() {
       "--no-fetch",
       "--deny",
       "warnings",
+      ...acceptedWarning,
       "--file",
       targetLock,
     ]);

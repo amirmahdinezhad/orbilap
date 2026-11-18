@@ -837,10 +837,11 @@ pub fn run() {
 
             // Direct toggle on click — no menu, so nothing intercepts the click.
             let mut builder = TrayIconBuilder::with_id("main");
-            builder = builder.icon(tray::render(tray::DEFAULT_ACCENT));
+            let ink = if cfg!(target_os = "macos") { tray::TEMPLATE_INK } else { tray::DEFAULT_ACCENT };
+            builder = builder.icon(tray::render(ink)).tooltip(tray::MENU_BAR_NAME);
             #[cfg(target_os = "macos")]
             {
-                builder = builder.icon_as_template(false);
+                builder = builder.icon_as_template(true).title(tray::MENU_BAR_TITLE);
             }
             let app_handle = app.handle().clone();
             builder

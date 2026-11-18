@@ -41,7 +41,7 @@ fn provider_mark(provider: Option<&str>) -> Option<Image<'static>> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn render(labels: &[Label], monochrome: bool, accent: [u8; 3], style: MenuBarStyle, show_app_logo: bool) -> Option<Image<'static>> {
+pub fn render(labels: &[Label], monochrome: bool, accent: [u8; 3], style: MenuBarStyle, show_app_logo: bool, template: bool) -> Option<Image<'static>> {
     use objc2::{rc::autoreleasepool, runtime::AnyObject, AnyThread};
     use objc2_app_kit::{
         NSBitmapFormat, NSBitmapImageRep, NSColor, NSDeviceRGBColorSpace, NSFont,
@@ -72,7 +72,7 @@ pub fn render(labels: &[Label], monochrome: bool, accent: [u8; 3], style: MenuBa
             let timeline = style == MenuBarStyle::ResetTimeline
                 && !label.metrics.is_empty() && label.metrics.len() == label.segments.len();
             let caption = label.caption.as_ref().filter(|s| !s.is_empty()).map(|s| NSString::from_str(s));
-            let caption_attrs = attrs(25.0, if !label.segments.is_empty() { label.color } else if monochrome { accent } else { [170, 177, 185] }, false);
+            let caption_attrs = attrs(25.0, if template || !label.segments.is_empty() { label.color } else if monochrome { accent } else { [170, 177, 185] }, false);
             let caption_width = caption.as_ref().map(|s| s.sizeWithAttributes(Some(&caption_attrs)).width).unwrap_or(0.0);
             let provider_space = if label.show_provider && provider_mark(label.provider.as_deref()).is_some() { 38.0 } else { 0.0 };
             let caption_space = provider_space + if caption.is_some() { caption_width.ceil() + 12.0 } else { 0.0 };
@@ -174,18 +174,20 @@ pub fn render(labels: &[Label], monochrome: bool, accent: [u8; 3], style: MenuBa
                 let bar_width = bar_width(label.metrics.len());
                 for (index, metric) in label.metrics.iter().enumerate() {
                     let y = top + index as f64 * (bar_height + gap);
-                    rounded_bar(&mut rgba, width, bar_x, y, bar_width, bar_height, metric.color, 55);
+                    rounded_bar(&mut rgba, width, bar_x, y, bar_width, bar_height, Some(metric.color), 55);
                     if let Some(fraction) = metric.fraction.filter(|v| v.is_finite()) {
-                        rounded_bar(&mut rgba, width, bar_x, y, bar_width * fraction.clamp(0.0, 1.0), bar_height, metric.color, 255);
+                        rounded_bar(&mut rgba, width, bar_x, y, bar_width * fraction.clamp(0.0, 1.0), bar_height, Some(metric.color), 255);
                     } else {
-                        rounded_bar(&mut rgba, width, bar_x + (bar_width - 8.0) / 2.0, y + (bar_height - 2.0) / 2.0, 8.0, 2.0, metric.color, 220);
+                        rounded_bar(&mut rgba, width, bar_x + (bar_width - 8.0) / 2.0, y + (bar_height - 2.0) / 2.0, 8.0, 2.0, Some(metric.color), 220);
                     }
                     if let Some(position) = metric.time_marker.filter(|v| v.is_finite() && (0.0..=1.0).contains(v)) {
                         let center = (bar_x + bar_width * position).clamp(bar_x + 2.0, bar_x + bar_width - 2.0);
-                        // A neutral dark tick with a light halo stays visible on
-                        // both the filled warning hue and the translucent track.
-                        rounded_bar(&mut rgba, width, center - 2.0, y - 1.0, 4.0, bar_height + 2.0, [245, 247, 250], 245);
-                        rounded_bar(&mut rgba, width, center - 1.0, y - 1.0, 2.0, bar_height + 2.0, [24, 26, 30], 255);
+                        // Cut a transparent halo into the template so the tick
+                        // remains distinct after AppKit applies a single tint.
+                        let halo = (!template).then_some([245, 247, 250]);
+                        let tick = if template { accent } else { [24, 26, 30] };
+                        rounded_bar(&mut rgba, width, center - 2.0, y - 1.0, 4.0, bar_height + 2.0, halo, 245);
+                        rounded_bar(&mut rgba, width, center - 1.0, y - 1.0, 2.0, bar_height + 2.0, Some(tick), 255);
                     }
                 }
             }
@@ -194,8 +196,8 @@ pub fn render(labels: &[Label], monochrome: bool, accent: [u8; 3], style: MenuBa
                 for (metric, run) in label.metrics.iter().zip(&layout.0) {
                     let track_width = run.2;
                     if let Some(left) = metric.reset_fraction {
-                        rounded_bar(&mut rgba, width, track_x, 32.0, track_width, 2.0, metric.color, 64);
-                        rounded_bar(&mut rgba, width, track_x, 32.0, track_width * left, 2.0, metric.color, 255);
+                        rounded_bar(&mut rgba, width, track_x, 32.0, track_width, 2.0, Some(metric.color), 64);
+                        rounded_bar(&mut rgba, width, track_x, 32.0, track_width * left, 2.0, Some(metric.color), 255);
                     }
                     track_x += track_width + 8.0;
                 }
@@ -222,7 +224,7 @@ fn bar_width(count: usize) -> f64 { if count == 1 { 96.0 } else { 72.0 } }
 /// Rounded coverage is composed in straight alpha, matching Tauri's image buffer.
 #[cfg(target_os = "macos")]
 #[allow(clippy::too_many_arguments)]
-fn rounded_bar(rgba: &mut [u8], image_width: u32, x: f64, y: f64, width: f64, height: f64, color: [u8; 3], alpha: u8) {
+fn rounded_bar(rgba: &mut [u8], image_width: u32, x: f64, y: f64, width: f64, height: f64, color: Option<[u8; 3]>, alpha: u8) {
     if width <= 0.0 || height <= 0.0 { return; }
     let radius = (height / 2.0).min(width / 2.0);
     for py in y.floor().max(0.0) as u32..(y + height).ceil().min(36.0) as u32 {
@@ -237,6 +239,10 @@ fn rounded_bar(rgba: &mut [u8], image_width: u32, x: f64, y: f64, width: f64, he
             } }
             let offset = ((py * image_width + px) * 4) as usize;
             let foreground = f64::from(alpha) / 255.0 * coverage;
+            let Some(color) = color else {
+                rgba[offset + 3] = (f64::from(rgba[offset + 3]) * (1.0 - foreground)).round() as u8;
+                continue;
+            };
             let background = f64::from(rgba[offset + 3]) / 255.0;
             let out = foreground + background * (1.0 - foreground);
             if out > 0.0 {
@@ -250,7 +256,7 @@ fn rounded_bar(rgba: &mut [u8], image_width: u32, x: f64, y: f64, width: f64, he
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn render(_labels: &[Label], _monochrome: bool, _accent: [u8; 3], _style: MenuBarStyle, _show_app_logo: bool) -> Option<Image<'static>> { None }
+pub fn render(_labels: &[Label], _monochrome: bool, _accent: [u8; 3], _style: MenuBarStyle, _show_app_logo: bool, _template: bool) -> Option<Image<'static>> { None }
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
@@ -267,8 +273,8 @@ mod tests {
                     metrics: vec![Metric { label: Some("5h".into()), fraction: Some(0.72),
                         time_marker: Some(0.45), reset_fraction: Some(0.45), color }] };
                 let labels = [label.clone(), label];
-                let shown = render(&labels, true, color, style, true).unwrap();
-                let hidden = render(&labels, true, color, style, false).unwrap();
+                let shown = render(&labels, true, color, style, true, false).unwrap();
+                let hidden = render(&labels, true, color, style, false, false).unwrap();
                 assert_eq!(shown.width(), hidden.width() + 52);
                 assert_eq!(shown.height(), hidden.height());
                 for y in 0..hidden.height() {
@@ -279,7 +285,7 @@ mod tests {
                         "hiding the app mark must preserve provider marks, initials and metrics");
                 }
             }
-            let fallback = render(&[], true, color, style, false).unwrap();
+            let fallback = render(&[], true, color, style, false, false).unwrap();
             assert_eq!(fallback.width(), 52);
             assert!(fallback.rgba().chunks_exact(4).any(|pixel| pixel[3] > 200));
         }
@@ -298,9 +304,9 @@ mod tests {
         for style in [MenuBarStyle::Percentages,MenuBarStyle::Progress,MenuBarStyle::ResetTimeline] {
             let mut label = Label { provider: Some("claude".into()), show_provider: false, text: "5h 72%".into(), caption: Some("EB".into()), color,
                 segments: vec![("5h 72%".into(),color)], metrics: vec![Metric { label: Some("5h".into()), fraction: Some(0.72), time_marker: None, reset_fraction: Some(0.5), color }] };
-            let plain = render(&[label.clone()],true,color,style, true).unwrap();
+            let plain = render(&[label.clone()],true,color,style, true, false).unwrap();
             label.show_provider = true;
-            let marked = render(&[label.clone()],true,color,style, true).unwrap();
+            let marked = render(&[label.clone()],true,color,style, true, false).unwrap();
             assert_eq!(marked.width(), plain.width() + 38);
             for y in 0..36 { for x in 58..plain.width()-6 {
                 let source = ((y*plain.width()+x)*4) as usize;
@@ -326,13 +332,13 @@ mod tests {
                 color,
             }],
         };
-        let image = render(&[label.clone()], true, color, MenuBarStyle::ResetTimeline, true).unwrap();
+        let image = render(&[label.clone()], true, color, MenuBarStyle::ResetTimeline, true, false).unwrap();
         let alpha = |image: &Image<'_>, x| image.rgba()[((32 * image.width() + x) * 4 + 3) as usize];
         assert!(alpha(&image, 60) > 200, "the first quarter is filled");
         assert!(alpha(&image, 90) < 100, "the rest is only the track");
         label.segments[0].0 = "100%".into();
         label.metrics[0].reset_fraction = None;
-        let untimed = render(&[label], true, color, MenuBarStyle::ResetTimeline, true).unwrap();
+        let untimed = render(&[label], true, color, MenuBarStyle::ResetTimeline, true, false).unwrap();
         assert_eq!(image.width(), untimed.width());
         assert_eq!(alpha(&untimed, 60), 0);
     }
@@ -342,7 +348,7 @@ mod tests {
         for count in [1usize, 2, 3] {
             let metrics: Vec<_> = (0..count).map(|_| Metric { label: None, fraction: Some(0.25), time_marker: Some(0.5), reset_fraction: None, color: [0, 122, 255] }).collect();
             let mut label = Label { provider: None, show_provider: false, text: "25%".into(), caption: None, color: [0, 122, 255], segments: Vec::new(), metrics };
-            let image = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true).unwrap();
+            let image = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true, false).unwrap();
             let marker_x = 58 + (bar_width(count) / 2.0) as u32;
             let (height, gap, top) = bar_stack(count);
             for row in 0..count {
@@ -350,9 +356,9 @@ mod tests {
                 let offset = ((y * image.width() + marker_x) * 4) as usize;
                 assert_eq!(&image.rgba()[offset..offset + 4], &[24, 26, 30, 255]);
             }
-            let numeric = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Percentages, true).unwrap();
+            let numeric = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Percentages, true, false).unwrap();
             for metric in &mut label.metrics { metric.time_marker = None; }
-            assert_eq!(numeric.rgba(), render(&[label], true, [0, 122, 255], MenuBarStyle::Percentages, true).unwrap().rgba());
+            assert_eq!(numeric.rgba(), render(&[label], true, [0, 122, 255], MenuBarStyle::Percentages, true, false).unwrap().rgba());
         }
     }
 
@@ -361,7 +367,7 @@ mod tests {
         for count in [1usize, 2, 3] {
             let label = Label { provider: None, show_provider: false, text: "70%".into(), caption: Some("EB".into()), color: [0, 122, 255], segments: Vec::new(),
                 metrics: (0..count).map(|index| Metric { label: Some(if index == 0 { "5h" } else { "1w" }.into()), fraction: Some(0.7 - index as f64 * 0.2), time_marker: Some(0.45 + index as f64 * 0.1), reset_fraction: None, color: [0, 122, 255] }).collect() };
-            let image = render(&[label], true, [0, 122, 255], MenuBarStyle::Progress, true).unwrap();
+            let image = render(&[label], true, [0, 122, 255], MenuBarStyle::Progress, true, false).unwrap();
             if let Ok(path) = std::env::var("ORBILAP_TEST_TIME_MARKERS") {
                 std::fs::write(format!("{path}-{count}.rgba"), image.rgba()).unwrap();
                 std::fs::write(format!("{path}-{count}.json"), format!("[{},{}]", image.width(), image.height())).unwrap();
@@ -375,7 +381,7 @@ mod tests {
             segments: vec![("5h 60%".into(), [0, 122, 255])],
             metrics: vec![Metric { label: Some("5h".into()), fraction: Some(0.6), time_marker: None, reset_fraction: None, color: [0, 122, 255] }] };
         for style in [MenuBarStyle::Percentages, MenuBarStyle::Progress] {
-            let image = render(&[label.clone()], true, [0, 122, 255], style, true).unwrap();
+            let image = render(&[label.clone()], true, [0, 122, 255], style, true, false).unwrap();
             for y in 34..36 { for x in 52..image.width() {
                 let pixel = ((y * image.width() + x) * 4) as usize;
                 assert_eq!(image.rgba()[pixel + 3], 0, "no active underline in either display style");
@@ -387,7 +393,7 @@ mod tests {
     fn initials_match_percentage_font_size() {
         let label = Label { provider: None, show_provider: false, text: "88%".into(), caption: Some("88".into()), color: [0, 122, 255],
             segments: vec![("88%".into(), [255, 69, 58])], metrics: Vec::new() };
-        let image = render(&[label], true, [0, 122, 255], MenuBarStyle::Percentages, true).unwrap();
+        let image = render(&[label], true, [0, 122, 255], MenuBarStyle::Percentages, true, false).unwrap();
         let height = |color: [u8; 3]| {
             let rows: Vec<_> = image.rgba().chunks_exact(4).enumerate().filter_map(|(index, pixel)| {
                 let x = index as u32 % image.width(); let y = index as u32 / image.width();
@@ -405,19 +411,19 @@ mod tests {
                 Metric { label: None, fraction: Some(0.5), time_marker: None, reset_fraction: None, color: [0, 122, 255] },
                 Metric { label: None, fraction: Some(0.25), time_marker: None, reset_fraction: None, color: [255, 159, 10] },
             ] };
-        let image = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true).unwrap();
+        let image = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true, false).unwrap();
         let pixel = |image: &Image<'_>, x: u32, y: u32| { let i = ((y * image.width() + x) * 4) as usize; image.rgba()[i..i+4].to_vec() };
         assert_eq!(image.height(), 36);
         assert_eq!(pixel(&image, 88, 11), [0, 122, 255, 255]);
         assert_eq!(pixel(&image, 68, 25), [255, 159, 10, 255]);
         assert!(pixel(&image, 88, 25)[3] < 100, "shorter second bar must not borrow the first fraction");
         label.metrics.pop();
-        assert!(render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true).unwrap().width() > image.width());
+        assert!(render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true, false).unwrap().width() > image.width());
         assert!(bar_stack(1).0 > bar_stack(2).0);
         label.metrics[0].fraction = Some(0.0);
-        let empty = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true).unwrap();
+        let empty = render(&[label.clone()], true, [0, 122, 255], MenuBarStyle::Progress, true, false).unwrap();
         label.metrics[0].fraction = None;
-        let missing = render(&[label], true, [0, 122, 255], MenuBarStyle::Progress, true).unwrap();
+        let missing = render(&[label], true, [0, 122, 255], MenuBarStyle::Progress, true, false).unwrap();
         assert!(pixel(&empty, 106, 18)[3] < 100);
         assert!(pixel(&missing, 106, 18)[3] > 200, "unknown usage has an unavailable dash rather than a zero reading");
     }
@@ -428,7 +434,7 @@ mod tests {
             segments: vec![("25%".into(), [255, 69, 58])],
             metrics: vec![Metric { label: None, fraction: Some(0.25), time_marker: None, reset_fraction: None, color: [255, 69, 58] }] };
         for style in [MenuBarStyle::Percentages, MenuBarStyle::Progress] {
-            let image = render(&[label.clone()], true, [0, 122, 255], style, true).unwrap();
+            let image = render(&[label.clone()], true, [0, 122, 255], style, true, false).unwrap();
             let colored_x = |color: [u8; 3]| image.rgba().chunks_exact(4).enumerate().filter_map(|(i,p)| {
                 let x = i as u32 % image.width();
                 (x >= 52 && p[3] > 240 && p[..3] == color).then_some(x)
@@ -445,7 +451,7 @@ mod tests {
             segments: vec![("5h 70%".into(), [0, 122, 255]), ("  1w 4%".into(), [255, 69, 58])],
             metrics: vec![Metric { label: Some("5h".into()), fraction: Some(0.7), time_marker: None, reset_fraction: None, color: [0, 122, 255] }, Metric { label: Some("1w".into()), fraction: Some(0.04), time_marker: None, reset_fraction: None, color: [255, 69, 58] }] };
         for (suffix, style) in [("progress", MenuBarStyle::Progress), ("percentages", MenuBarStyle::Percentages)] {
-            let image = render(&[label.clone()], true, [255, 69, 58], style, true).unwrap();
+            let image = render(&[label.clone()], true, [255, 69, 58], style, true, false).unwrap();
             if style == MenuBarStyle::Progress {
                 let last_bar_pixel = ((34 * image.width() + image.width() - 10) * 4) as usize;
                 assert_eq!(image.rgba()[last_bar_pixel + 3], 0, "active indicator must not create a third bar");
@@ -468,7 +474,7 @@ mod tests {
             segments: Vec::new(), metrics: Vec::new(),
         }];
         for monochrome in [true, false] {
-            let image = render(&labels, monochrome, accent, MenuBarStyle::Percentages, true).unwrap();
+            let image = render(&labels, monochrome, accent, MenuBarStyle::Percentages, true, false).unwrap();
             let region_has = |color: [u8; 3], text: bool| {
                 image.rgba().chunks_exact(4).enumerate().any(|(i, p)| {
                     let x = i as u32 % image.width();
@@ -492,7 +498,7 @@ mod tests {
            
             segments: Vec::new(), metrics: Vec::new(),
         }];
-        let image = render(&labels, false, crate::tray::DEFAULT_ACCENT, MenuBarStyle::Percentages, true).expect("native text renderer");
+        let image = render(&labels, false, crate::tray::DEFAULT_ACCENT, MenuBarStyle::Percentages, true, false).expect("native text renderer");
         if let Ok(path) = std::env::var("ORBILAP_TEST_TRAY_RGBA") {
             std::fs::write(&path, image.rgba()).unwrap();
             std::fs::write(format!("{path}.json"), format!("[{},{}]", image.width(), image.height())).unwrap();

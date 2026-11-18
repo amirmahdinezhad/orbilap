@@ -689,8 +689,7 @@ describe("limit countdown and quick switching", () => {
     expect(screen.queryByText("Limit reached")).not.toBeInTheDocument();
     expect(screen.queryByText("Resets in 28h 15m")).not.toBeInTheDocument();
     const weekly = within(screen.getByRole("article", {name:"Personal account account"})).getByRole("meter", {name:"Weekly remaining"});
-    expect(weekly).toHaveAttribute("aria-valuetext", expect.stringContaining("Resets"));
-    expect(weekly).toHaveAttribute("aria-valuetext", expect.stringContaining("2026"));
+    expect(weekly).toHaveAttribute("aria-valuetext", expect.stringContaining("Reset countdown, 1d 4h left"));
     await user.click(screen.getByRole("button", { name: "Switch to Work account" }));
     expect(api.scheduleCodexRestart).toHaveBeenCalledWith(work.id);
     expect(await screen.findByLabelText("Account switch")).toHaveClass("sr-only");

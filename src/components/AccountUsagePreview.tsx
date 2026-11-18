@@ -8,7 +8,7 @@ import { Tooltip } from "./ui/tooltip";
 import { NextIcon, RefreshIcon } from "../icons";
 import { useTimeDisplay } from "../displayPrefsContext";
 import type { TimeFormat } from "../displayPrefs";
-import { formatClockTime, formatDateTime } from "../timeDisplay";
+import { deadlineRemaining, formatClockTime, formatDateTime } from "../timeDisplay";
 
 /** Only measured main windows belong in the primary card columns. */
 export function accountPreviewWindows(quota: QuotaSet | null | undefined): QuotaWindow[] {
@@ -34,7 +34,12 @@ export function resetDeadline(iso: string | null | undefined, now: number, timeF
   const day = date.toDateString() === today.toDateString() ? "Today"
     : date.toDateString() === tomorrow.toDateString() ? "Tomorrow"
     : date.toLocaleDateString("en", { month: "short", day: "numeric" });
-  return { day, time: formatClockTime(date, timeFormat), full: `Resets ${formatDateTime(date, timeFormat, true)}` };
+  return {
+    day,
+    time: formatClockTime(date, timeFormat),
+    full: `Resets ${formatDateTime(date, timeFormat, true)}`,
+    remaining: deadlineRemaining(date.getTime(), now),
+  };
 }
 
 /** Match the time marker to the bar's remaining/used direction; never guess a period. */
@@ -48,16 +53,20 @@ export function accountTimeMarker(window: QuotaWindow, now: number, showRemainin
 function UsageTrack({ window, now, value, showRemaining, label }: {
   window: QuotaWindow; now: number; value: number; showRemaining: boolean; label: string;
 }) {
-  const { timeFormat } = useTimeDisplay();
+  const { deadlineDisplay, timeFormat } = useTimeDisplay();
   const deadline = resetDeadline(window.resetsAt, now, timeFormat);
+  const remaining = deadlineDisplay === "remaining" ? deadline?.remaining : undefined;
   const marker = accountTimeMarker(window, now, showRemaining);
   const pending = deadline?.day === "Updating";
   const state = showRemaining ? "remaining" : "used";
   const timeText = marker !== null && !pending ? `${Math.round(marker * 100)}% of window time ${showRemaining ? "remaining" : "elapsed"}` : null;
-  const resetText = deadline?.full ?? "Reset time unavailable";
+  const resetText = remaining ? `Reset countdown, ${remaining}` : deadline?.full ?? "Reset time unavailable";
   return <Tooltip contentClassName="usage-reset-popover" content={<span className="usage-reset-tooltip">
     <span className="usage-reset-tooltip-label"><RefreshIcon size={12} />{label} reset</span>
-    {deadline && !pending ? <span className="usage-reset-tooltip-date"><span>{deadline.day}</span><time dateTime={window.resetsAt!}>{deadline.time}</time></span>
+    {deadline && !pending ? <span className="usage-reset-tooltip-date">
+      {!remaining && <span>{deadline.day}</span>}
+      <time dateTime={window.resetsAt!}>{remaining ?? deadline.time}</time>
+    </span>
       : <span className="usage-reset-tooltip-status">{pending ? "Refreshing…" : "Time unavailable"}</span>}
   </span>}>
     <span className="usage-preview-plot" role="meter" tabIndex={0} aria-label={`${label} ${state}`}

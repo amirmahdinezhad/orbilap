@@ -1,9 +1,25 @@
 # Orbilap icons
 
-`icon.png` is the 1024 × 1024 RGBA master for the app icon. Tauri uses the
-desktop PNG sizes, `icon.icns` and `icon.ico` for application bundles.
-The panel uses `src/assets/app-icon.webp`, and the browser uses
-`public/orbilap.png`.
+`Orbilap.icon` holds the full-bleed tile artwork for macOS 26 and later.
+Tauri bundles the compiled `Assets.car` catalog. macOS applies its rounded
+mask at display time, including on small Finder icons.
+
+After editing the Icon Composer document, regenerate the catalog with Xcode
+26 or later. From this directory, run:
+
+```sh
+catalog_dir="$(mktemp -d)"
+xcrun actool Orbilap.icon --compile "$catalog_dir" --platform macosx \
+  --minimum-deployment-target 26.0 --target-device mac --app-icon Orbilap \
+  --output-partial-info-plist "$catalog_dir/icon.plist" --warnings --errors
+cp "$catalog_dir/Assets.car" Assets.car
+```
+
+`icon.png` is the 1024 × 1024 RGBA master for the pre-masked variants.
+Its tile uses the macOS 26 silhouette centered in the 824 × 824 region of
+the transparent canvas. Keep the artwork synchronized with `Orbilap.icon`
+when regenerating the fallback ICNS, desktop PNGs and ICO, the panel WebP
+(`src/assets/app-icon.webp`) and the favicon (`public/orbilap.png`).
 
 `tray-template.png` is the transparent macOS menu-bar glyph. The app tints it
 to match appearance and usage warning states.

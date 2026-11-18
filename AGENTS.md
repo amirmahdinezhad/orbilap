@@ -53,6 +53,9 @@
 ## Release workflow
 
 - Read `docs/RELEASING.md` when preparing, building or publishing a release.
+- Before the next packaged build after 1.0.1, recheck CVE-2026-112366
+  (`picomatch`) and apply any available fix before building. Follow the
+  verification steps in `docs/RELEASING.md`.
 - Before every release, complete [docs/SECURITY.md](docs/SECURITY.md), run
   `pnpm run security:check` against the exact candidate source and lockfiles,
   and record the results and unresolved findings in

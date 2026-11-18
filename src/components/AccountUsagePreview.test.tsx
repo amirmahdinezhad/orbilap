@@ -2,6 +2,7 @@ import { render } from "../test/notifications";
 import { act, cleanup,  screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
+import { DisplayPrefsContext } from "../displayPrefsContext";
 import { AccountQuotaPreview, AccountUsagePreview, accountPreviewWindows, accountTimeMarker, resetDeadline } from "./AccountUsagePreview";
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -43,7 +44,7 @@ it("uses local calendar days, including year boundaries, without long countdown 
 it("updates at the actual deadline without claiming the quota has already refreshed", async () => {
   vi.useFakeTimers(); const now = new Date(2026,10,4,10).getTime(); vi.setSystemTime(now);
   render(<AccountUsagePreview accountName="Work" windows={[{window:"5-hour",percent:100,resetsAt:new Date(now+1000).toISOString()}]} />);
-  expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", expect.stringContaining("Resets"));
+  expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", expect.stringContaining("Reset countdown, <1m left"));
   expect(screen.queryByText("Today")).not.toBeInTheDocument();
   await act(async()=>{ vi.advanceTimersByTime(1000); });
   expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", expect.stringContaining("waiting for fresh usage"));
@@ -113,7 +114,7 @@ it("aligns the time marker to remaining/used mode and hides unmeasurable periods
   expect(accountTimeMarker({...session,resetsAt:new Date(now-1).toISOString()},now,false)).toBe(1);
 });
 
-it("shows the exact reset time on keyboard focus without adding a time row", async () => {
+it("shows the reset countdown on keyboard focus without adding a time row", async () => {
   render(<AccountUsagePreview accountName="Work" windows={[{window:"5-hour",percent:62,resetsAt:new Date(Date.now()+2*3600000).toISOString()}]} />);
   const meter=screen.getByRole("meter",{name:"5-hour remaining"});
   expect(meter).toHaveAttribute("aria-valuetext",expect.stringContaining("Time marker: 40%"));
@@ -122,17 +123,39 @@ it("shows the exact reset time on keyboard focus without adding a time row", asy
   await userEvent.setup().tab();
   expect(meter).toHaveFocus();
   expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("5-hour reset");
-  expect(screen.getByRole("tooltip")).toHaveTextContent(/\d{2}:\d{2}/);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("2h left");
   expect(screen.getByRole("tooltip").textContent?.length).toBeLessThan(45);
   expect(screen.getByRole("tooltip")).not.toHaveTextContent("of window time");
+  expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("Reset countdown, 2h left"));
   expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("40% of window time remaining"));
 });
 
-it("reveals the reset details on pointer hover and dismisses them on Escape", async () => {
+it("updates an open reset tooltip when the deadline or clock format changes", async () => {
   const user=userEvent.setup();
-  render(<AccountUsagePreview accountName="Work" windows={[{window:"weekly",percent:10,resetsAt:new Date(Date.now()+86400000).toISOString()}]} />);
-  await user.hover(screen.getByRole("meter"));
-  expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("Weekly reset");
+  const reset = new Date();
+  reset.setDate(reset.getDate() + 1);
+  reset.setHours(18, 30, 0, 0);
+  const preview = <AccountUsagePreview accountName="Work" windows={[{ window: "weekly", percent: 10, resetsAt: reset.toISOString() }]} />;
+  const view = render(<DisplayPrefsContext.Provider value={{ deadlineDisplay: "date", timeFormat: "24h" }}>
+    {preview}
+  </DisplayPrefsContext.Provider>);
+  const meter = screen.getByRole("meter");
+  await user.hover(meter);
+  const tooltip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+  expect(tooltip).toHaveTextContent("Weekly reset");
+  expect(tooltip).toHaveTextContent("Tomorrow");
+  expect(tooltip).toHaveTextContent("18:30");
+  expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining(String(reset.getFullYear())));
+  view.rerender(<DisplayPrefsContext.Provider value={{ deadlineDisplay: "date", timeFormat: "12h" }}>
+    {preview}
+  </DisplayPrefsContext.Provider>);
+  expect(tooltip).toHaveTextContent("06:30 PM");
+  expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("06:30 PM"));
+  view.rerender(<DisplayPrefsContext.Provider value={{ deadlineDisplay: "remaining", timeFormat: "12h" }}>
+    {preview}
+  </DisplayPrefsContext.Provider>);
+  expect(tooltip).toHaveTextContent(/\d[dhm].*left/);
+  expect(tooltip).not.toHaveTextContent("06:30 PM");
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
 });

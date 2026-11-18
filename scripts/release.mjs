@@ -94,7 +94,7 @@ function assemble(bundleDirectories, outputDirectory) {
     const archiveName = `${product}_${suffix}.app.tar.gz`;
     copyFileSync(archive, path.join(outputDirectory, archiveName));
     copyFileSync(`${archive}.sig`, path.join(outputDirectory, `${archiveName}.sig`));
-    copyFileSync(dmg, path.join(outputDirectory, dmgName));
+    run("hdiutil", ["convert", dmg, "-format", "ULMO", "-o", path.join(outputDirectory, dmgName)]);
     platforms[platform] = {
       signature: readFileSync(`${archive}.sig`, "utf8").trim(),
       url: `https://github.com/${repository}/releases/download/v${version}/${archiveName}`,

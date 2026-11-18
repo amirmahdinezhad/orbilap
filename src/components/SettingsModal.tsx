@@ -360,27 +360,25 @@ export function SettingsModal({
                 </ToggleGroup>
               </section>
               <section className="settings-section settings-choice" aria-labelledby="deadline-display-label">
-                <h3 id="deadline-display-label">Account deadlines</h3>
+                <h3 id="deadline-display-label">Deadline display</h3>
                 <ToggleGroup type="single" disabled={saving} className="segmented ios-segments theme-segments"
-                  aria-label="Account deadlines" value={display.deadlineDisplay}
+                  aria-labelledby="deadline-display-label" value={display.deadlineDisplay}
                   style={segmentStyle(2, display.deadlineDisplay === "date" ? 1 : 0, keyboardNavigation)}
                   onValueChange={value => { if (value === "remaining" || value === "date") setDisplay({ ...display, deadlineDisplay: value }); }}>
                   <ToggleGroupItem value="remaining" className="segment">Time remaining</ToggleGroupItem>
                   <ToggleGroupItem value="date" className="segment">Date &amp; time</ToggleGroupItem>
                 </ToggleGroup>
               </section>
-              {display.deadlineDisplay === "date" && (
-                <section className="settings-section settings-choice" aria-labelledby="time-format-label">
-                  <h3 id="time-format-label">Time format</h3>
-                  <ToggleGroup type="single" disabled={saving} className="segmented ios-segments theme-segments"
-                    aria-label="Time format" value={display.timeFormat}
-                    style={segmentStyle(2, display.timeFormat === "12h" ? 1 : 0, keyboardNavigation)}
-                    onValueChange={value => { if (value === "24h" || value === "12h") setDisplay({ ...display, timeFormat: value }); }}>
-                    <ToggleGroupItem value="24h" className="segment">24-hour</ToggleGroupItem>
-                    <ToggleGroupItem value="12h" className="segment">AM/PM</ToggleGroupItem>
-                  </ToggleGroup>
-                </section>
-              )}
+              <section className="settings-section settings-choice" aria-labelledby="time-format-label">
+                <h3 id="time-format-label">Clock format</h3>
+                <ToggleGroup type="single" disabled={saving} className="segmented ios-segments theme-segments"
+                  aria-labelledby="time-format-label" value={display.timeFormat}
+                  style={segmentStyle(2, display.timeFormat === "12h" ? 1 : 0, keyboardNavigation)}
+                  onValueChange={value => { if (value === "24h" || value === "12h") setDisplay({ ...display, timeFormat: value }); }}>
+                  <ToggleGroupItem value="24h" className="segment">24-hour</ToggleGroupItem>
+                  <ToggleGroupItem value="12h" className="segment">AM/PM</ToggleGroupItem>
+                </ToggleGroup>
+              </section>
               <div className="settings-footer">
                 <Button
                   type="button"

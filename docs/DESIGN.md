@@ -2,6 +2,11 @@
 
 ## Current system
 
+The Orbilap app icon lets modern macOS apply its own rounded mask to the
+dark tile through the bundled icon catalog. The legacy bundle, panel and
+favicon use the corresponding pre-masked artwork. The menu bar uses the
+standalone orbit template. These marks are static.
+
 The DMG installer uses a fixed white background with soft orbital arcs in
 opposite corners, dark text and a black transfer arrow. Keep native
 label areas clear and light so Finder's Orbilap and Applications labels remain
@@ -320,20 +325,24 @@ directly on the card without an Additional limits disclosure. Omit the catalog
 text listing available models.
 Reuse the disclosure’s keyboard, pointer and reduced-motion behavior.
 
-Account deadlines default to remaining time, using compact two-unit labels such as
-“5d 17h left”. Past deadlines say “1d 2h past deadline” and retain the shared red
+Account deadlines default to remaining time, using compact labels such as
+“5d 17h left”. Omit zero minutes at whole hours, as in “5h left”. Past
+deadlines say “1d 2h past deadline” and retain the shared red
 metadata treatment. Remove the standalone Update payment text. Confirmed overdue
 payment still uses the provider's grace deadline instead of the later plan date;
 its context and last successful check remain in the shared tooltip. Unknown grace
 deadlines stay explicitly unavailable. Passing a date never establishes lost access.
 
-General settings adds Account deadlines (Time remaining / Date & time) and Time
-format (24-hour / AM/PM) using the existing Orbilap segmented controls. Show Time
-format only in Date & time mode and retain the saved format when switching modes. Defaults are
-Time remaining and 24-hour for new and legacy preferences. Persist both as validated
-frontend display preferences and update all cards immediately. Date mode omits the
-year on cards; full tooltips retain the year. Clock format applies consistently to
-account deadlines, reset tooltips/notices and last-refreshed time. Reuse existing
+General settings shows Deadline display (Time remaining / Date & time) and Clock
+format (24-hour / AM/PM) using the existing Orbilap segmented controls. Deadline
+display controls both the subscription line and the usage reset tooltip. The
+tooltip and the meter's accessible value use the same countdown in Time remaining
+mode. Date & time uses the existing local day and clock layout. Reset times that
+have passed or are unavailable keep their status messages. Defaults are Time
+remaining and 24-hour for new and legacy preferences. Persist both as validated
+frontend display preferences and update all cards immediately. Clock format stays
+available for exact times such as subscription details, reset notices and
+last-refreshed time. Reuse existing
 focus, pointer and reduced-motion behavior. Shared segment feedback stays immediate
 for keyboard input; ticking deadline text adds no motion or live announcements.
 
@@ -507,10 +516,17 @@ Home header glyphs use a lighter 1.5 stroke weight. Keep their existing sizes,
 button hit areas, focus, pointer feedback and reduced-motion behavior. This
 static treatment applies to header actions and the workspace chevron only.
 
-The native menu-bar mark and usage metrics use #1c1c1c ink, matching dark home
-account cards, by default, including
-unavailable samples. Only enabled Near limit warnings may apply a status color.
-This static color change adds no motion or changes to panel controls.
+The native menu-bar mark, provider marks and usage metrics use an AppKit
+template for neutral and unavailable samples. macOS picks the foreground
+to match the menu-bar background, including wallpaper changes. A transparent
+gap around progress reset markers keeps them visible in the template.
+Enabled Near limit warnings keep their status colors. When rendering warnings,
+use charcoal neutral ink on a light menu bar and near-white on a dark menu bar.
+The native status item handles pointer and keyboard feedback without added motion.
+Local macOS development builds append the native title DEV to the status item
+and identify themselves as Orbilap Dev in the tooltip. Keep the title visible
+with usage metrics hidden or shown. The OS styles the title for the menu bar
+background and treats the image and title as a single click target.
 
 Home accounts keep 20px bottom padding inside the scrolling viewport, so the
 last card clears the panel edge when scrolled to the end. Root bottom padding

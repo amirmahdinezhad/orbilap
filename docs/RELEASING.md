@@ -18,6 +18,12 @@ Complete `docs/SECURITY.md` and `pnpm run security:check` before requesting
 approval. Record findings, fixes and test limitations in the version's
 `docs/releases/<version>.security.md` and include them in the release review.
 
+Before the next packaged build after 1.0.1, check the upstream
+[`picomatch` advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+and npm for a fix for CVE-2026-112366. If one is available, update all resolved
+copies in the lockfile and run the full security gate before producing the
+build. The owner-approved 1.0.1 exception expires with that version.
+
 Present the tested changes, proposed version and notes to the owner. Wait for
 explicit approval for that release before pushing its tag or publishing it.
 An explicit request to publish a named version already authorizes that version;
@@ -76,8 +82,10 @@ macOS approval is explained in the README.
    node scripts/release.mjs assemble src-tauri/target/aarch64-apple-darwin/release/bundle src-tauri/target/x86_64-apple-darwin/release/bundle
    ```
 
-   Assembly requires an empty `release-artifacts` directory and verifies the
-   resulting assets. Upload only these verified artifacts as a **draft**:
+   Assembly requires an empty `release-artifacts` directory. It compresses
+   both DMGs with macOS LZMA (ULMO), preserving the disk layout and app
+   signatures, then verifies the resulting assets. Upload only these verified
+   artifacts as a **draft**:
 
    ```bash
    VERSION="$(node -p "require('./package.json').version")"
@@ -142,6 +150,10 @@ and wait for explicit installation. Release notes remain visible after download.
 Drafts and prereleases do not become the public latest update.
 
 ## Packaging
+
+Both macOS architecture bundles include `Assets.car` for current macOS and
+`icon.icns` for older versions. See [the icon source notes](../src-tauri/icons/README.md)
+for the catalog regeneration command.
 
 The DMG background and editable source are in `packaging/dmg/`; dimensions and
 icon positions are in `src-tauri/tauri.conf.json`. GitHub Releases is the supported

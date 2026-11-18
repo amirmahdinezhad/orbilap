@@ -1,0 +1,17 @@
+{
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": false,
+          "image-name": "Artwork.png",
+          "name": "Orbilap"
+        }
+      ],
+      "specular": false
+    }
+  ],
+  "supported-platforms": {
+    "squares": ["macOS"]
+  }
+}

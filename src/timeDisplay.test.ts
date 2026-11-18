@@ -6,9 +6,11 @@ describe("deadline and clock display", () => {
   it("uses two duration units and distinguishes past deadlines without claiming lost access", () => {
     expect(deadlineRemaining(now + 6 * 86400000 + 3 * 3600000, now)).toBe("6d 3h left");
     expect(deadlineRemaining(now + 65 * 60000, now)).toBe("1h 5m left");
+    expect(deadlineRemaining(now + 5 * 3600000, now)).toBe("5h left");
     expect(deadlineRemaining(now + 30000, now)).toBe("<1m left");
     expect(deadlineRemaining(now, now)).toBe("<1m past deadline");
     expect(deadlineRemaining(now - 65 * 60000, now)).toBe("1h 5m past deadline");
+    expect(deadlineRemaining(now - 3600000, now)).toBe("1h past deadline");
   });
   it("formats midnight and noon correctly in both clock modes and omits card years", () => {
     const midnight = Date.parse("2026-11-14T00:00:00Z");

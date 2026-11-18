@@ -214,25 +214,24 @@ describe("SettingsModal updates", () => {
 
 
 describe("restored global settings tabs", () => {
-  it("shows the saved time format only in date and time mode", async () => {
+  it("keeps Clock format available and saves it in both deadline modes", async () => {
     const user = userEvent.setup();
     const view = renderModal();
     expect(screen.getByRole("radio", { name: "Time remaining" })).toBeChecked();
-    expect(screen.queryByRole("region", { name: "Time format" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Date & time" }));
+    expect(screen.getByRole("region", { name: "Clock format" })).toBeVisible();
     const clock = screen.getByRole("radio", { name: "24-hour" });
     expect(clock).toBeChecked();
     clock.focus(); await user.keyboard("{ArrowRight}"); await user.keyboard(" ");
     expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
-    expect(JSON.parse(localStorage.getItem("orbilap.displayPrefs")!)).toMatchObject({ deadlineDisplay: "date", timeFormat: "12h" });
+    expect(JSON.parse(localStorage.getItem("orbilap.displayPrefs")!)).toMatchObject({ deadlineDisplay: "remaining", timeFormat: "12h" });
+    await user.click(screen.getByRole("radio", { name: "Date & time" }));
+    expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
     const remaining = screen.getByRole("radio", { name: "Time remaining" });
     await user.click(remaining);
     expect(remaining).toHaveFocus();
-    expect(screen.queryByRole("region", { name: "Time format" })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
     view.unmount(); renderModal();
     expect(screen.getByRole("radio", { name: "Time remaining" })).toBeChecked();
-    expect(screen.queryByRole("region", { name: "Time format" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Date & time" }));
     expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
   });
   it("shows General and Updates, while keeping alerts and menu-bar settings in the workspace", async () => {
