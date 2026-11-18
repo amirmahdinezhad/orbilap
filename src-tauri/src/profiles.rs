@@ -575,7 +575,7 @@ impl Repository {
             name,
             name_is_custom: Some(true),
             provider_name: None,
-            created_at: Some(chrono::Utc::now().to_rfc3339()),
+            created_at: Some(crate::timestamps::now_rfc3339()),
             needs_activation: false,
         };
         private_dir(&self.root)?;
@@ -630,7 +630,7 @@ impl Repository {
                 name: name.clone(),
                 name_is_custom: Some(!raw_name.trim().is_empty() && raw_name.trim() != crate::codex::imported_account_label(&login.raw)),
                 provider_name: None,
-                created_at: Some(chrono::Utc::now().to_rfc3339()),
+                created_at: Some(crate::timestamps::now_rfc3339()),
                 needs_activation: true,
             }
         };
@@ -762,7 +762,7 @@ impl Repository {
                     name: label,
                     name_is_custom: Some(true),
                     provider_name: None,
-                    created_at: Some(chrono::Utc::now().to_rfc3339()),
+                    created_at: Some(crate::timestamps::now_rfc3339()),
             needs_activation: false,
                 };
                 let home = self.home(&previous.id)?;
@@ -1746,7 +1746,7 @@ mod tests {
                     name: "Personal".into(),
                     name_is_custom: None,
                     provider_name: None,
-                    created_at: Some(chrono::Utc::now().to_rfc3339()),
+                    created_at: Some(crate::timestamps::now_rfc3339()),
             needs_activation: false,
                 })
                 .unwrap()

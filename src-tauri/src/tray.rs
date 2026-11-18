@@ -309,7 +309,7 @@ pub fn start_monitor(app: &AppHandle, settings: AppSettings) {
                 };
                 if accepted {
                     paint(&app, state.clone());
-                    let now = chrono::Utc::now();
+                    let now = time::OffsetDateTime::now_utc();
                     // Do not schedule a switch for settings superseded during collection.
                     if state.lock().unwrap_or_else(|e| e.into_inner()).generation == generation {
                         use tauri_plugin_notification::NotificationExt;
@@ -370,7 +370,7 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
     // restore an old provider's title after a settings change.
     let _ = app.run_on_main_thread(move || {
         let state = state.lock().unwrap_or_else(|e| e.into_inner());
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let light_menu_bar = menu_bar_is_light(&handle);
         let (mut labels, mut icon_accent) = menu_bar_labels(&state.settings, &state.profiles, now, light_menu_bar);
         if state.settings.active_workspace().is_none() && state.settings.menu_bar_enabled && state.settings.menu_bar_provider != MenuBarProvider::Codex && !state.settings.multi_profile.enabled {
@@ -486,7 +486,7 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
     });
 }
 
-fn menu_bar_labels(settings: &AppSettings, profiles: &[ProfileUsage], now: chrono::DateTime<chrono::Utc>, light_menu_bar: bool) -> (Vec<crate::tray_text::Label>, [u8; 3]) {
+fn menu_bar_labels(settings: &AppSettings, profiles: &[ProfileUsage], now: time::OffsetDateTime, light_menu_bar: bool) -> (Vec<crate::tray_text::Label>, [u8; 3]) {
     let mut labels = Vec::new();
     let mut icon_accent = DEFAULT_ACCENT;
     let mut warning_used = 0.0_f64;
@@ -592,7 +592,7 @@ fn account_warning(
     profile: &ProfileUsage,
     prefs: &CodexAccountPreferences,
     thresholds: &[u8],
-    now: chrono::DateTime<chrono::Utc>,
+    now: time::OffsetDateTime,
 ) -> Option<(f64, [u8; 3])> {
     if !prefs.warning_colors { return None; }
     let used = profile.quota.as_ref().filter(|q| q.error.is_none())?.windows.as_ref()?.iter()
@@ -607,7 +607,7 @@ fn account_label(
     prefs: &CodexAccountPreferences,
     thresholds: &[u8],
     show_remaining: bool,
-    now: chrono::DateTime<chrono::Utc>,
+    now: time::OffsetDateTime,
 ) -> crate::tray_text::Label {
     let warning = account_warning(profile, prefs, thresholds, now).map(|(_, color)| color);
     let color = warning.unwrap_or(DEFAULT_ACCENT);
@@ -652,14 +652,14 @@ fn account_label(
 
 /// Match the Usage limits popup: known session/week durations only, never infer
 /// a monthly duration or fabricate timing when the reset is absent or invalid.
-fn time_remaining_fraction(window: &QuotaWindow, now: chrono::DateTime<chrono::Utc>) -> Option<f64> {
+fn time_remaining_fraction(window: &QuotaWindow, now: time::OffsetDateTime) -> Option<f64> {
     let duration = match window.window.rsplit(" · ").next()?.to_lowercase().as_str() {
         "5-hour" | "rolling" => 18_000_000.0,
         "weekly" => 604_800_000.0,
         _ => return None,
     };
-    let reset = chrono::DateTime::parse_from_rfc3339(window.resets_at.as_deref()?).ok()?;
-    let left = reset.signed_duration_since(now).num_milliseconds() as f64;
+    let reset = crate::timestamps::parse_rfc3339(window.resets_at.as_deref()?).ok()?;
+    let left = (reset - now).whole_milliseconds() as f64;
     if !window.percent.is_finite() || left <= 0.0 || left > duration { return None; }
     Some(left / duration)
 }
@@ -787,7 +787,7 @@ pub fn collect_profiles(settings: &AppSettings) -> Vec<ProfileUsage> {
                     let current = sample(active);
                     let cutoff = 100.0 - f64::from(workspace.usage.antigravity_switch_remaining);
                     let needs_backup = in_rotation(&active.id) && current.quota.as_ref()
-                        .is_some_and(|quota| antigravity_switch_limits(quota, cutoff, chrono::Utc::now()).is_some());
+                        .is_some_and(|quota| antigravity_switch_limits(quota, cutoff, time::OffsetDateTime::now_utc()).is_some());
                     let mut google = vec![current];
                     if needs_backup {
                         google.extend(std::thread::scope(|scope| {
@@ -891,7 +891,7 @@ fn warning_color(used: f64) -> [u8; 3] {
 fn auto_switch_target<'a>(
     profiles: &'a [ProfileUsage],
     settings: &AppSettings,
-    now: chrono::DateTime<chrono::Utc>,
+    now: time::OffsetDateTime,
 ) -> Option<(&'a ProfileUsage, &'a ProfileUsage, String)> {
     let active_index = profiles
         .iter()
@@ -902,7 +902,7 @@ fn auto_switch_target<'a>(
     let window = data.windows.as_ref()?.iter().find(|w| {
         canonical_account_window(&w.window).is_some() && current_window(w, now)
             && w.percent >= 100.0 - f64::from(settings.active_workspace().map_or(2, |w| w.usage.auto_switch_remaining)) && w.resets_at.as_deref()
-                .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok()).is_some_and(|reset| reset > now)
+                .and_then(|v| crate::timestamps::parse_rfc3339(v).ok()).is_some_and(|reset| reset > now)
     })?;
     let period = window.resets_at.clone()?;
     for offset in 1..profiles.len() {
@@ -932,7 +932,7 @@ fn antigravity_windows(quota: &QuotaSet) -> Option<&[QuotaWindow]> {
 }
 
 fn antigravity_has_capacity(
-    quota: &QuotaSet, limits: &[&str], cutoff: f64, now: chrono::DateTime<chrono::Utc>,
+    quota: &QuotaSet, limits: &[&str], cutoff: f64, now: time::OffsetDateTime,
 ) -> bool {
     antigravity_windows(quota).is_some_and(|windows| {
         limits.iter().all(|limit| windows.iter().any(|window| &window.window == limit))
@@ -946,14 +946,14 @@ fn is_gemini_limit(label: &str) -> bool {
 }
 
 fn antigravity_switch_limits(
-    quota: &QuotaSet, cutoff: f64, now: chrono::DateTime<chrono::Utc>,
-) -> Option<(Vec<&str>, chrono::DateTime<chrono::Utc>)> {
+    quota: &QuotaSet, cutoff: f64, now: time::OffsetDateTime,
+) -> Option<(Vec<&str>, time::OffsetDateTime)> {
     let measured = antigravity_windows(quota)?;
     let depleted: Vec<_> = measured.iter().filter(|window| {
         is_gemini_limit(&window.window) && current_window(window, now) && (cutoff..=100.0).contains(&window.percent)
     }).collect();
     let reset = depleted.iter().filter_map(|window| {
-        window.resets_at.as_deref()?.parse::<chrono::DateTime<chrono::Utc>>().ok().filter(|reset| *reset > now)
+        crate::timestamps::parse_rfc3339(window.resets_at.as_deref()?).ok().filter(|reset| *reset > now)
     }).max()?;
     // Preserve capacity for other limits in every affected model family, such
     // as a weekly limit when the five-hour limit is the one that triggered.
@@ -965,8 +965,8 @@ fn antigravity_switch_limits(
 }
 
 fn antigravity_switch_target<'a>(
-    profiles: &'a [ProfileUsage], workspace: &crate::workspaces::Workspace, now: chrono::DateTime<chrono::Utc>,
-) -> Option<(&'a ProfileUsage, &'a ProfileUsage, Vec<&'a str>, chrono::DateTime<chrono::Utc>)> {
+    profiles: &'a [ProfileUsage], workspace: &crate::workspaces::Workspace, now: time::OffsetDateTime,
+) -> Option<(&'a ProfileUsage, &'a ProfileUsage, Vec<&'a str>, time::OffsetDateTime)> {
     let enrolled = |profile: &ProfileUsage| {
         profile.provider == "antigravity"
             && workspace.antigravity_account_ids.contains(&profile.id)
@@ -984,7 +984,7 @@ fn antigravity_switch_target<'a>(
 
 fn run_antigravity_switch(
     app: &AppHandle, workspace: &crate::workspaces::Workspace, source: &ProfileUsage, target: &ProfileUsage,
-    limits: &[&str], reset: chrono::DateTime<chrono::Utc>,
+    limits: &[&str], reset: time::OffsetDateTime,
 ) {
     use tauri_plugin_notification::NotificationExt;
     let mut changed = false;
@@ -1004,7 +1004,7 @@ fn run_antigravity_switch(
                     || !current.usage.antigravity_switch_accounts.contains(*id)) {
                     return Err("Antigravity rotation accounts changed.".into());
                 }
-                let now = chrono::Utc::now();
+                let now = time::OffsetDateTime::now_utc();
                 if now >= reset || !antigravity_has_capacity(&quota, limits, cutoff, now) {
                     return Err("Antigravity quota changed. Auto-switch was skipped.".into());
                 }
@@ -1033,7 +1033,7 @@ fn run_antigravity_switch(
 fn selected_color(
     settings: &AppSettings,
     data: Option<&QuotaSet>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: time::OffsetDateTime,
 ) -> [u8; 3] {
     let Some(data) = data else {
         return DEFAULT_ACCENT;
@@ -1082,12 +1082,12 @@ fn window_label(window: MenuBarWindow) -> &'static str {
     }
 }
 
-fn current_window(window: &QuotaWindow, now: chrono::DateTime<chrono::Utc>) -> bool {
+fn current_window(window: &QuotaWindow, now: time::OffsetDateTime) -> bool {
     window.percent.is_finite()
         && !window
             .resets_at
             .as_deref()
-            .and_then(|iso| chrono::DateTime::parse_from_rfc3339(iso).ok())
+            .and_then(|iso| crate::timestamps::parse_rfc3339(iso).ok())
             .is_some_and(|reset| reset <= now)
 }
 
@@ -1100,7 +1100,7 @@ fn remaining_percent(used: f64) -> f64 {
 fn usage_title(
     settings: &AppSettings,
     quota: Option<&QuotaSet>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: time::OffsetDateTime,
 ) -> String {
     if !settings.menu_bar_enabled {
         return String::new();
@@ -1186,7 +1186,7 @@ mod tests {
         let mut settings = AppSettings { workspaces: vec![workspace], active_workspace_id: Some("studio".into()), ..Default::default() };
         let profile = |provider: &str, id: &str| ProfileUsage { id: id.into(), name: id.into(), provider: provider.into(), active: true, quota: None };
         let profiles = vec![profile("antigravity","ag"), profile("claude","cl"), profile("codex","cx"), ProfileUsage { active: false, ..profile("codex","backup") }, profile("claude","outside")];
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let (labels, _) = menu_bar_labels(&settings, &profiles, now, false);
         assert_eq!(labels.iter().filter_map(|l| l.provider.as_deref()).collect::<Vec<_>>(), ["codex","claude","antigravity"]);
         assert!(labels.iter().all(|l| l.show_provider));
@@ -1212,14 +1212,14 @@ mod tests {
 
     #[test]
     fn reset_fraction_uses_known_windows_and_rejects_unreliable_resets() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         for (kind, duration) in [("5-hour", 18_000_000), ("rolling", 18_000_000), ("Weekly", 604_800_000)] {
             let mut window = quota(&[(kind, 30.0)]).windows.unwrap().remove(0);
-            window.resets_at = Some((now + chrono::Duration::milliseconds(duration / 4)).to_rfc3339());
+            window.resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::milliseconds(duration / 4)));
             assert_eq!(time_remaining_fraction(&window, now), Some(0.25));
-            window.resets_at = Some((now + chrono::Duration::milliseconds(duration + 1)).to_rfc3339());
+            window.resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::milliseconds(duration + 1)));
             assert_eq!(time_remaining_fraction(&window, now), None);
-            window.resets_at = Some(now.to_rfc3339()); assert_eq!(time_remaining_fraction(&window, now), None);
+            window.resets_at = Some(crate::timestamps::format_rfc3339(now)); assert_eq!(time_remaining_fraction(&window, now), None);
             window.resets_at = Some("invalid".into()); assert_eq!(time_remaining_fraction(&window, now), None);
             window.resets_at = None; assert_eq!(time_remaining_fraction(&window, now), None);
         }
@@ -1258,7 +1258,7 @@ mod tests {
             assert!((a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5);
             let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true, provider: "codex".into(), quota: Some(quota(&[("weekly", 80.0)])) };
             let prefs = CodexAccountPreferences { warning_colors: true, menu_bar_windows: vec!["weekly".into()], ..Default::default() };
-            let mut label = account_label(&profile, &prefs, &[75, 90, 95], true, chrono::Utc::now());
+            let mut label = account_label(&profile, &prefs, &[75, 90, 95], true, time::OffsetDateTime::now_utc());
             tint_label(&mut label, color);
             assert_eq!(label.color, color); assert!(label.segments.iter().all(|(_, c)| *c == color)); assert!(label.metrics.iter().all(|m| m.color == color));
             if let Ok(path) = std::env::var("ORBILAP_TEST_WARNING_PALETTE") {
@@ -1277,8 +1277,8 @@ mod tests {
     fn legacy_provider_colors_do_not_override_the_shared_accent_or_warnings() {
         let mut settings = AppSettings { menu_bar_provider: MenuBarProvider::Claude, ..Default::default() };
         settings.provider_accents.insert("claude".into(), "#7c6cf0".into());
-        assert_eq!(selected_color(&settings, Some(&quota(&[("5-hour", 20.0)])), chrono::Utc::now()), DEFAULT_ACCENT);
-        assert_eq!(selected_color(&settings, Some(&quota(&[("5-hour", 96.0)])), chrono::Utc::now()), [255, 69, 58]);
+        assert_eq!(selected_color(&settings, Some(&quota(&[("5-hour", 20.0)])), time::OffsetDateTime::now_utc()), DEFAULT_ACCENT);
+        assert_eq!(selected_color(&settings, Some(&quota(&[("5-hour", 96.0)])), time::OffsetDateTime::now_utc()), [255, 69, 58]);
     }
 
     #[test]
@@ -1380,7 +1380,7 @@ mod tests {
             (MenuBarWindow::Monthly, "1mo 50%"),
         ] {
             assert_eq!(
-                usage_title(&settings(window), Some(&data), chrono::Utc::now()),
+                usage_title(&settings(window), Some(&data), time::OffsetDateTime::now_utc()),
                 expected
             );
         }
@@ -1399,7 +1399,7 @@ mod tests {
             usage_title(
                 &settings(MenuBarWindow::Auto),
                 Some(&data),
-                chrono::Utc::now()
+                time::OffsetDateTime::now_utc()
             ),
             "1w 9%"
         );
@@ -1410,14 +1410,14 @@ mod tests {
         let mut data = quota(&[("5-hour", 12.0)]);
         let app = settings(MenuBarWindow::Monthly);
         assert_eq!(
-            usage_title(&app, Some(&data), chrono::Utc::now()),
+            usage_title(&app, Some(&data), time::OffsetDateTime::now_utc()),
             "1mo —"
         );
         data.error = Some("session expired".into());
         let title = usage_title(
             &settings(MenuBarWindow::FiveHour),
             Some(&data),
-            chrono::Utc::now(),
+            time::OffsetDateTime::now_utc(),
         );
         assert_eq!(title, "5h —");
         data.error = None;
@@ -1426,7 +1426,7 @@ mod tests {
             usage_title(
                 &settings(MenuBarWindow::FiveHour),
                 Some(&data),
-                chrono::Utc::now()
+                time::OffsetDateTime::now_utc()
             ),
             "5h —"
         );
@@ -1445,7 +1445,7 @@ mod tests {
                 usage_title(
                     &settings(MenuBarWindow::FiveHour),
                     Some(&data),
-                    chrono::Utc::now()
+                    time::OffsetDateTime::now_utc()
                 ),
                 expected
             );
@@ -1454,10 +1454,10 @@ mod tests {
 
     #[test]
     fn elapsed_resets_are_unavailable() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let mut data = quota(&[("5-hour", 30.0), ("Weekly", 20.0)]);
         data.windows.as_mut().unwrap()[0].resets_at =
-            Some((now - chrono::Duration::seconds(1)).to_rfc3339());
+            Some(crate::timestamps::format_rfc3339(now - time::Duration::seconds(1)));
         assert_eq!(
             usage_title(&settings(MenuBarWindow::FiveHour), Some(&data), now),
             "5h —"
@@ -1470,14 +1470,14 @@ mod tests {
     fn disabling_clears_the_title_and_ignores_popup_wording() {
         let data = quota(&[("5-hour", 20.0)]);
         assert_eq!(
-            usage_title(&AppSettings::default(), Some(&data), chrono::Utc::now()),
+            usage_title(&AppSettings::default(), Some(&data), time::OffsetDateTime::now_utc()),
             ""
         );
         let mut app = settings(MenuBarWindow::FiveHour);
         for remaining_mode in [true, false] {
             app.usage_show_remaining = remaining_mode;
             assert_eq!(
-                usage_title(&app, Some(&data), chrono::Utc::now()),
+                usage_title(&app, Some(&data), time::OffsetDateTime::now_utc()),
                 "5h 80%"
             );
         }
@@ -1494,7 +1494,7 @@ mod tests {
         state.update(settings(MenuBarWindow::Weekly));
         assert_eq!(state.generation, 0);
         assert_eq!(
-            usage_title(&state.settings, state.quota.as_ref(), chrono::Utc::now()),
+            usage_title(&state.settings, state.quota.as_ref(), time::OffsetDateTime::now_utc()),
             "1w 30%"
         );
         let mut next = settings(MenuBarWindow::Weekly);
@@ -1512,22 +1512,22 @@ mod tests {
         let mut app = settings(MenuBarWindow::FiveHour);
         app.usage_appearance.show_labels = false;
         app.usage_appearance.show_remaining = false;
-        let title = usage_title(&app, Some(&data), chrono::Utc::now());
+        let title = usage_title(&app, Some(&data), time::OffsetDateTime::now_utc());
         assert_eq!(title, "77%");
         app.usage_appearance.show_remaining = true;
         assert_eq!(
-            usage_title(&app, Some(&data), chrono::Utc::now()),
+            usage_title(&app, Some(&data), time::OffsetDateTime::now_utc()),
             "77%"
         );
     }
 
     #[test]
     fn auto_switch_skips_unavailable_exhausted_and_unrelated_accounts() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let profile = |id: &str, active: bool, used: f64, weekly: f64| {
             let mut quota = quota(&[("5-hour", used), ("Weekly", weekly)]);
             quota.windows.as_mut().unwrap()[0].resets_at =
-                Some((now + chrono::Duration::hours(2)).to_rfc3339());
+                Some(crate::timestamps::format_rfc3339(now + time::Duration::hours(2)));
             ProfileUsage {
                 id: id.into(),
                 name: id.into(),
@@ -1555,8 +1555,8 @@ mod tests {
 
     #[test]
     fn antigravity_rotation_requires_matching_quota_and_workspace_enrollment() {
-        let now = chrono::Utc::now();
-        let reset = (now + chrono::Duration::hours(1)).to_rfc3339();
+        let now = time::OffsetDateTime::now_utc();
+        let reset = crate::timestamps::format_rfc3339(now + time::Duration::hours(1));
         let workspace: crate::workspaces::Workspace = serde_json::from_value(serde_json::json!({
             "id":"studio", "name":"Studio", "accent":"#007aff", "accountIds":[],
             "antigravityAccountIds":["active","wrong-model","limited","backup"],
@@ -1582,7 +1582,7 @@ mod tests {
             sample("backup", false, &[(five_hour, 20.0), (weekly, 30.0)]),
         ];
         assert_eq!(antigravity_switch_target(&profiles, &workspace, now).unwrap().1.id, "backup");
-        assert!(antigravity_switch_target(&profiles, &workspace, now + chrono::Duration::hours(2)).is_none());
+        assert!(antigravity_switch_target(&profiles, &workspace, now + time::Duration::hours(2)).is_none());
         profiles.pop();
         assert!(antigravity_switch_target(&profiles, &workspace, now).is_none());
     }
@@ -1613,7 +1613,7 @@ mod tests {
 
     #[test]
     fn codex_low_remaining_percentage_rounds_up_at_half_points() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let prefs = CodexAccountPreferences {
             menu_bar_windows: vec!["5-hour".into()],
             ..Default::default()
@@ -1638,7 +1638,7 @@ mod tests {
         assert!(state.update(app));
         assert_eq!(state.profiles.len(),1,"changing legacy workspace metadata keeps the sample");
         let prefs = menu_bar_account_preferences(&state.settings, "emma", None);
-        let label = account_label(&state.profiles[0],&prefs,state.settings.menu_bar_warning_thresholds(),true,chrono::Utc::now());
+        let label = account_label(&state.profiles[0],&prefs,state.settings.menu_bar_warning_thresholds(),true,time::OffsetDateTime::now_utc());
         assert_eq!(label.color,DEFAULT_ACCENT,"metrics and logo retain card-matched charcoal without a Near limit warning");
         assert!(label.segments.iter().all(|(_,color)| *color==DEFAULT_ACCENT));
         assert!(label.metrics.iter().all(|metric| metric.color==DEFAULT_ACCENT));
@@ -1656,7 +1656,7 @@ mod tests {
         for provider in ["codex","claude","antigravity"] {
             let prefs = menu_bar_account_preferences(&state.settings, "emma", None);
             let profile = ProfileUsage {provider:provider.into(),quota:Some(quota(&[("weekly",96.0)])),..state.profiles[0].clone()};
-            let label = account_label(&profile,&prefs,state.settings.menu_bar_warning_thresholds(),true,chrono::Utc::now());
+            let label = account_label(&profile,&prefs,state.settings.menu_bar_warning_thresholds(),true,time::OffsetDateTime::now_utc());
             assert_eq!(label.color,[255,69,58]);
             assert!(label.metrics.iter().all(|metric| metric.color==[255,69,58]));
         }
@@ -1715,7 +1715,7 @@ mod tests {
         assert!(state.update(app));
         assert_eq!(state.profiles.len(), 1, "enabling colors must preserve the sample needed for the immediate repaint");
         let prefs = CodexAccountPreferences { menu_bar_windows: vec!["weekly".into()], warning_colors: true, ..Default::default() };
-        let label = account_label(&state.profiles[0], &prefs, &[75, 90, 95], true, chrono::Utc::now());
+        let label = account_label(&state.profiles[0], &prefs, &[75, 90, 95], true, time::OffsetDateTime::now_utc());
         assert_eq!(label.segments[0].1, [255, 69, 58]);
     }
 
@@ -1727,7 +1727,7 @@ mod tests {
         let profile = ProfileUsage {id:"emma".into(),name:"Emma Brooks".into(),active:true,provider:"codex".into(),quota:Some(quota(&[("weekly",96.0)]))};
         let mut state = MenuBarState { provider_updates: Default::default(),settings:app.clone(),quota:None,profiles:vec![profile],generation:0};
         let prefs = CodexAccountPreferences {menu_bar_windows:vec!["weekly".into()],warning_colors:true,..Default::default()};
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let levels = state.settings.menu_bar_warning_thresholds();
         assert_eq!(account_warning(&state.profiles[0],&prefs,levels,now).unwrap().1,[255,159,10]);
         for style in [crate::settings::MenuBarStyle::Percentages,crate::settings::MenuBarStyle::Progress] {
@@ -1748,7 +1748,7 @@ mod tests {
             provider: "codex".into(), quota: Some(quota(&[("weekly", 96.0)])) };
         let mut prefs = CodexAccountPreferences { menu_bar_windows: vec!["weekly".into()], warning_colors: true, ..Default::default() };
         let thresholds = [75, 90]; // Disabled critical level falls back to orange.
-        let label = account_label(&profile, &prefs, &thresholds, true, chrono::Utc::now());
+        let label = account_label(&profile, &prefs, &thresholds, true, time::OffsetDateTime::now_utc());
         let orange = [255, 159, 10];
         assert_eq!(label.caption.as_deref(), Some("EB"));
         assert_eq!(label.segments[0].1, orange);
@@ -1760,7 +1760,7 @@ mod tests {
             }));
         }
         prefs.show_profile_label = false;
-        assert!(account_label(&profile, &prefs, &thresholds, true, chrono::Utc::now()).caption.is_none());
+        assert!(account_label(&profile, &prefs, &thresholds, true, time::OffsetDateTime::now_utc()).caption.is_none());
         assert_eq!(threshold_color(96.0, &[]), None);
         assert_eq!(account_initials("  امیر محمدی "), "ام");
         assert_eq!(account_initials("Emma"), "EM");
@@ -1775,7 +1775,7 @@ mod tests {
 
     #[test]
     fn menu_bar_shows_five_hour_before_weekly_regardless_of_selection_order() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         for provider in ["codex", "claude", "antigravity"] {
             let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true,
                 provider: provider.into(), quota: Some(quota(&[("weekly", 16.0), ("5-hour", 0.0)])) };
@@ -1794,7 +1794,7 @@ mod tests {
 
     #[test]
     fn progress_metrics_follow_selected_limits_and_capacity_direction() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true, provider: "codex".into(), quota: Some(quota(&[("5-hour", 30.0), ("weekly", 96.0), ("monthly", 50.0)])) };
         let prefs = CodexAccountPreferences { menu_bar_windows: vec!["5-hour".into(), "weekly".into(), "15m".into()], warning_colors: true, ..Default::default() };
         let remaining = account_label(&profile, &prefs, &[75, 90, 95], true, now);
@@ -1810,7 +1810,7 @@ mod tests {
 
     #[test]
     fn limit_warning_tints_every_menu_bar_element_in_both_styles() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true,
             provider: "codex".into(), quota: Some(quota(&[("5-hour", 30.0), ("weekly", 96.0)])) };
         let prefs = CodexAccountPreferences { color: "#7c6cf0".into(), menu_bar_windows: vec!["5-hour".into(), "weekly".into(), "15m".into()], warning_colors: true, ..Default::default() };
@@ -1828,12 +1828,12 @@ mod tests {
 
     #[test]
     fn uniform_warning_follows_enabled_levels_and_restores_identity_on_recovery() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let mut profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true,
             provider: "codex".into(), quota: Some(quota(&[("5-hour", 80.0), ("weekly", 96.0), ("monthly", 100.0)])) };
         let mut prefs = CodexAccountPreferences { color: "#7c6cf0".into(), menu_bar_windows: vec!["5-hour".into(), "weekly".into()], warning_colors: true, ..Default::default() };
         assert_eq!(account_warning(&profile, &prefs, &[75, 90], now), Some((96.0, [255, 159, 10])));
-        profile.quota.as_mut().unwrap().windows.as_mut().unwrap()[1].resets_at = Some((now - chrono::Duration::seconds(1)).to_rfc3339());
+        profile.quota.as_mut().unwrap().windows.as_mut().unwrap()[1].resets_at = Some(crate::timestamps::format_rfc3339(now - time::Duration::seconds(1)));
         assert_eq!(account_warning(&profile, &prefs, &[75, 90, 95], now), Some((80.0, [255, 214, 10])), "expired and unselected limits cannot escalate the tint");
         profile.quota.as_mut().unwrap().windows.as_mut().unwrap()[0].percent = 20.0;
         assert_eq!(account_warning(&profile, &prefs, &[75, 90, 95], now), None);
@@ -1849,7 +1849,7 @@ mod tests {
 
     #[test]
     fn account_warning_colors_are_uniform_and_keep_unavailable_selections() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let mut prefs = CodexAccountPreferences {
             color: "#7c6cf0".into(),
             menu_bar_windows: vec!["5-hour".into(), "weekly".into(), "15m".into()],
@@ -1871,10 +1871,10 @@ mod tests {
 
     #[test]
     fn switch_cycle_requires_explicit_source_and_target_membership_and_supports_weekly_only() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let sample = |id: &str, active: bool, used: f64| {
             let mut q = quota(&[("Weekly", used)]);
-            q.windows.as_mut().unwrap()[0].resets_at = Some((now + chrono::Duration::days(2)).to_rfc3339());
+            q.windows.as_mut().unwrap()[0].resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::days(2)));
             ProfileUsage { id: id.into(), name: id.into(), active, provider: "codex".into(), quota: Some(q) }
         };
         let samples = vec![sample("first", true, 100.0), sample("excluded", false, 0.0), sample("second", false, 20.0)];
@@ -1894,7 +1894,7 @@ mod tests {
 
     #[test]
     fn named_provider_buckets_keep_their_own_limit_and_warning_color() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let profile = ProfileUsage { id: "google".into(), name: "Google work".into(), provider: "antigravity".into(), active: false, quota: Some(quota(&[("Gemini Pro", 96.0), ("Gemini Flash", 20.0)])) };
         let prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini Pro".into()], warning_colors: true, ..Default::default() };
         let label = account_label(&profile, &prefs, &[75, 90, 95], true, now);
@@ -1924,11 +1924,11 @@ mod tests {
 
     #[test]
     fn model_specific_metrics_keep_values_order_and_reset_timing() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let mut data = quota(&[("Gemini 4 Argon · Weekly", 75.0), ("Gemini 4 Carbon · 5-hour", 20.0), ("Gemini · Weekly", 99.0)]);
         let windows = data.windows.as_mut().unwrap();
-        windows[0].resets_at = Some((now + chrono::Duration::days(2)).to_rfc3339());
-        windows[1].resets_at = Some((now + chrono::Duration::hours(1)).to_rfc3339());
+        windows[0].resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::days(2)));
+        windows[1].resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::hours(1)));
         let profile = ProfileUsage { id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true, quota: Some(data) };
         let prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini 4 Argon · Weekly".into(), "Gemini 4 Carbon · 5-hour".into()], warning_colors: true, ..Default::default() };
         let label = account_label(&profile, &prefs, &[75, 90, 95], true, now);
@@ -1944,7 +1944,7 @@ mod tests {
 
     #[test]
     fn matching_model_periods_have_short_distinct_labels_even_when_usage_is_unavailable() {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         let mut profile = ProfileUsage { id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true,
             quota: Some(quota(&[("Gemini 4 Carbon · 5-hour", 1.0), ("Gemini 4 Argon · Weekly", 15.0), ("Gemini 4 Carbon · Weekly", 1.0)])) };
         let mut prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini 4 Carbon · 5-hour".into(), "Gemini 4 Argon · Weekly".into(), "Gemini 4 Carbon · Weekly".into()], ..Default::default() };
@@ -1970,7 +1970,7 @@ mod tests {
             quota: Some(quota(&[("Gemini · 5-hour", 1.0), ("Gemini 4 Argon · Weekly", 15.0), ("Gemini 4 Carbon · Weekly", 1.0)])) };
         let mut prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini · 5-hour".into(), "Gemini 4 Argon · Weekly".into(), "Gemini 4 Carbon · Weekly".into()], ..Default::default() };
         for _ in 0..2 {
-            let label = account_label(&profile, &prefs, &[], true, chrono::Utc::now());
+            let label = account_label(&profile, &prefs, &[], true, time::OffsetDateTime::now_utc());
             assert_eq!(label.text, "Ca 1w 99%  Ar 1w 85%  Ge 5h 99%");
             assert_eq!(label.metrics.iter().map(|metric| metric.label.as_deref()).collect::<Vec<_>>(), [Some("Ca 1w"), Some("Ar 1w"), Some("Ge 5h")]);
             prefs.menu_bar_windows.reverse();
@@ -1979,8 +1979,8 @@ mod tests {
 
     #[test]
     fn switch_threshold_uses_remaining_capacity_and_rejects_targets_inside_threshold() {
-        let now = chrono::Utc::now();
-        let quota = |used| QuotaSet { provider: "codex".into(), windows: Some(vec![crate::quota::QuotaWindow { window: "weekly".into(), percent: used, resets_at: Some((now + chrono::Duration::hours(1)).to_rfc3339()), status: None }]), error: None, reset_credits: None, as_of: None };
+        let now = time::OffsetDateTime::now_utc();
+        let quota = |used| QuotaSet { provider: "codex".into(), windows: Some(vec![crate::quota::QuotaWindow { window: "weekly".into(), percent: used, resets_at: Some(crate::timestamps::format_rfc3339(now + time::Duration::hours(1))), status: None }]), error: None, reset_credits: None, as_of: None };
         let mut samples = vec![ProfileUsage { id: "first".into(), name: "First".into(), active: true, provider: "codex".into(), quota: Some(quota(97.9)) }, ProfileUsage { id: "second".into(), name: "Second".into(), active: false, provider: "codex".into(), quota: Some(quota(10.0)) }];
         let mut settings = AppSettings::default();
         for id in ["first", "second"] { settings.codex_accounts.insert(id.into(), CodexAccountPreferences { auto_switch: true, ..Default::default() }); }

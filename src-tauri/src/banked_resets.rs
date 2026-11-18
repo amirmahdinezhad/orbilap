@@ -146,7 +146,7 @@ fn parse_inventory(payload: &Value, usage: QuotaSet) -> Result<ResetInventory, S
         .and_then(Value::as_array)
         .ok_or("Codex reset details are unavailable. Retry to refresh them.")?;
     let covered = coverage(&usage);
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let mut result = Vec::new();
     for credit in credits {
         if credit["status"].as_str() != Some("available") {
@@ -159,7 +159,7 @@ fn parse_inventory(payload: &Value, usage: QuotaSet) -> Result<ResetInventory, S
         let expires_at = credit["expires_at"].as_str().map(str::to_owned);
         let expiry = expires_at
             .as_deref()
-            .map(chrono::DateTime::parse_from_rfc3339)
+            .map(crate::timestamps::parse_rfc3339)
             .transpose()
             .map_err(|_| "Codex returned an invalid reset expiration. Retry to refresh it.")?;
         let supported = credit["reset_type"].as_str() == Some("codex_rate_limits")
@@ -198,8 +198,8 @@ fn parse_inventory(payload: &Value, usage: QuotaSet) -> Result<ResetInventory, S
             !c.can_use,
             c.expires_at
                 .as_deref()
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                .map(|d| d.timestamp())
+                .and_then(|s| crate::timestamps::parse_rfc3339(s).ok())
+                .map(|d| d.unix_timestamp())
                 .unwrap_or(i64::MAX),
         )
     });
@@ -302,7 +302,7 @@ pub fn prepare(id: &str, credit_id: &str) -> Result<ResetReview, String> {
                 .as_ref()
                 .map(|s| s.plan_type.clone())
                 .unwrap_or_default(),
-            created_at: chrono::Utc::now().timestamp(),
+            created_at: time::OffsetDateTime::now_utc().unix_timestamp(),
             view: ResetReview {
                 token: uuid::Uuid::new_v4().to_string(),
                 credit,
@@ -310,7 +310,7 @@ pub fn prepare(id: &str, credit_id: &str) -> Result<ResetReview, String> {
             },
         })
     })?;
-    reviews.retain(|_, r| chrono::Utc::now().timestamp() - r.created_at < 600);
+    reviews.retain(|_, r| time::OffsetDateTime::now_utc().unix_timestamp() - r.created_at < 600);
     reviews.insert(review.view.token.clone(), review.clone());
     Ok(review.view)
 }
@@ -321,7 +321,7 @@ pub fn consume(id: &str, review_token: &str) -> Result<ConsumeResult, String> {
         .get(review_token)
         .cloned()
         .ok_or("Review this reset again before confirming.")?;
-    if review.profile_id != id || chrono::Utc::now().timestamp() - review.created_at >= 600 {
+    if review.profile_id != id || time::OffsetDateTime::now_utc().unix_timestamp() - review.created_at >= 600 {
         return Err("This confirmation expired. Review the reset again.".into());
     }
     let outcome = profiles::with_reset_account(id, |raw, identity, usage| {
@@ -489,7 +489,7 @@ mod tests {
             identity: "account-a".into(),
             request_id: "request-1".into(),
             plan_type: "plus".into(),
-            created_at: chrono::Utc::now().timestamp(),
+            created_at: time::OffsetDateTime::now_utc().unix_timestamp(),
             view: ResetReview {
                 token: "review-token".into(),
                 credit: ResetCredit {

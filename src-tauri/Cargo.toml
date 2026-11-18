@@ -1,6 +1,6 @@
 [package]
 name = "orbilap"
-version = "1.0.1"
+version = "1.0.2"
 description = "Switch AI accounts in seconds and see usage at a glance."
 authors = ["Amir Mahdi Nezhad"]
 edition = "2021"
@@ -29,7 +29,7 @@ sha2 = "0.10"
 libc = "0.2"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "form", "charset", "http2", "system-proxy"] }
 dirs = "7"
-chrono = "0.4"
+time = { version = "0.3", features = ["formatting", "parsing"] }
 base64 = "0.22"
 toml = "1.1"
 uuid = { version = "1", features = ["v4"] }

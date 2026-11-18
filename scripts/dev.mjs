@@ -22,7 +22,7 @@ function startIndependent(worker = "--worker") {
   // A failed/exited submit job keeps its label until explicitly removed.
   spawnSync("/bin/launchctl", ["remove", label], { stdio: "ignore" });
   const env = ["PATH=" + process.env.PATH];
-  for (const key of ["CODEX_HOME", "ORBILAP_OPENCODE_USERDATA", "ORBILAP_PREVIEW_CLAUDE"]) {
+  for (const key of ["CODEX_HOME", "ORBILAP_OPENCODE_USERDATA", "ORBILAP_PREVIEW_CLAUDE", "VITE_ORBILAP_PREVIEW_UPDATE"]) {
     if (process.env[key]) env.push(`${key}=${process.env[key]}`);
   }
   const result = spawnSync("/bin/launchctl", [

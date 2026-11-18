@@ -178,7 +178,7 @@ fn credentials(home: &Path) -> Result<Value, String> {
         "project_id":string(&input,&["project_id","projectId"]),
         "client_id":string(&input,&["client_id","clientId"]),
         "client_secret":string(&input,&["client_secret","clientSecret"]),
-        "expiry_date": input.get("expiry_date").or(input.get("expiresAt")).cloned().or_else(|| tokens["expiry"].as_str().and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok()).map(|v| json!(v.timestamp_millis()))).unwrap_or(Value::Null),
+        "expiry_date": input.get("expiry_date").or(input.get("expiresAt")).cloned().or_else(|| tokens["expiry"].as_str().and_then(|v| crate::timestamps::parse_rfc3339(v).ok()).map(|v| json!(crate::timestamps::unix_millis(v)))).unwrap_or(Value::Null),
         "id_token": input.get("id_token").or(tokens.get("id_token")).cloned().unwrap_or(Value::Null),
     });
     if value["refresh_token"].as_str().is_none() {
@@ -202,7 +202,7 @@ fn verified_user(home: &Path, probe: &Probe) -> Result<(Value, String, String), 
 fn refreshed_credentials(home: &Path, probe: &Probe) -> Result<Value, VerificationError> {
     let mut value = credentials(home)?;
     let expired = value["expiry_date"].as_i64().map_or(true, |ms| {
-        ms <= chrono::Utc::now().timestamp_millis() + 60_000
+        ms <= crate::timestamps::unix_millis(time::OffsetDateTime::now_utc()) + 60_000
     });
     if expired || value["access_token"].as_str().is_none() {
         let token = probe.json(probe.client.post(TOKEN).form(&[
@@ -213,7 +213,7 @@ fn refreshed_credentials(home: &Path, probe: &Probe) -> Result<Value, Verificati
         ]))?;
         value["access_token"] = token["access_token"].clone();
         if token["id_token"].is_string() { value["id_token"] = token["id_token"].clone(); }
-        value["expiry_date"] = (chrono::Utc::now().timestamp_millis()
+        value["expiry_date"] = (crate::timestamps::unix_millis(time::OffsetDateTime::now_utc())
             + token["expires_in"].as_i64().unwrap_or(3600) * 1000)
             .into();
         if let Some(refresh) = token["refresh_token"].as_str() {
@@ -663,7 +663,7 @@ fn measured_quota(mut windows: Vec<crate::quota::QuotaWindow>) -> Result<crate::
         (families.iter().position(|name| name == &family).unwrap_or(usize::MAX), rank)
     });
     Ok(crate::quota::QuotaSet { provider: "antigravity".into(), windows: Some(windows), error: None,
-        reset_credits: None, as_of: Some(chrono::Utc::now().to_rfc3339()) })
+        reset_credits: None, as_of: Some(crate::timestamps::now_rfc3339()) })
 }
 
 fn quota_from_summary(data: &Value) -> Result<crate::quota::QuotaSet, String> {
@@ -700,12 +700,12 @@ fn summary_quota(data: &Value, use_group_names: bool) -> Result<crate::quota::Qu
                 }
                 let cadence = match bucket["window"].as_str() { Some("5h") => Some("5-hour"), Some("weekly") => Some("Weekly"), _ => None };
                 let mut reset = string(bucket, &["resetTime", "resetsAt"])
-                    .filter(|r| chrono::DateTime::parse_from_rfc3339(r).is_ok());
+                    .filter(|r| crate::timestamps::parse_rfc3339(r).is_ok());
                 // Untouched buckets can report a moving full-window reset, not a fixed deadline.
                 let duration = match bucket["window"].as_str() { Some("5h") => Some(300), Some("weekly") => Some(10080), _ => None };
                 if fraction == 1.0 && bucket.get("description").is_none() {
-                    if let (Some(minutes), Some(at)) = (duration, reset.as_ref().and_then(|r| chrono::DateTime::parse_from_rfc3339(r).ok())) {
-                        if (at.timestamp() - chrono::Utc::now().timestamp() - minutes * 60).abs() <= 60 { reset = None; }
+                    if let (Some(minutes), Some(at)) = (duration, reset.as_ref().and_then(|r| crate::timestamps::parse_rfc3339(r).ok())) {
+                        if (at.unix_timestamp() - time::OffsetDateTime::now_utc().unix_timestamp() - minutes * 60).abs() <= 60 { reset = None; }
                     }
                 }
                 merge_windows(&mut windows, vec![crate::quota::QuotaWindow {
@@ -741,7 +741,7 @@ fn model_quota(data: &Value, use_model_names: bool) -> Result<crate::quota::Quot
             let quota = &model[key];
             if let Some(fraction) = quota["remainingFraction"].as_f64().filter(|f| f.is_finite() && (0.0..=1.0).contains(f)) {
                 merge_windows(&mut windows, vec![crate::quota::QuotaWindow { window: format!("{family} · {label}"),
-                    percent: (1.0 - fraction) * 100.0, resets_at: string(quota, &["resetTime"]).filter(|r| chrono::DateTime::parse_from_rfc3339(r).is_ok()), status: None }]);
+                    percent: (1.0 - fraction) * 100.0, resets_at: string(quota, &["resetTime"]).filter(|r| crate::timestamps::parse_rfc3339(r).is_ok()), status: None }]);
             }
         }
     }
@@ -1388,13 +1388,13 @@ fn consumer_profile(value: &Value) -> Result<Value, String> {
     let required = |key: &str| value[key].as_str().filter(|s| !s.is_empty())
         .ok_or_else(|| "This Google login needs to be reconnected before switching.".to_string());
     let expiry = value["expiry_date"].as_i64()
-        .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
+        .and_then(crate::timestamps::from_unix_millis)
         .ok_or("This Google login has no valid expiry. Reconnect it before switching.")?;
     Ok(json!({
         "auth_method": "consumer",
         "id_token": required("id_token")?,
         "token": { "access_token": required("access_token")?, "refresh_token": required("refresh_token")?,
-            "token_type": "Bearer", "expiry": expiry.to_rfc3339() }
+            "token_type": "Bearer", "expiry": crate::timestamps::format_rfc3339(expiry) }
     }))
 }
 

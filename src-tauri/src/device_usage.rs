@@ -1,6 +1,6 @@
 //! Estimate from local, account-scoped Codex usage events. Historical or
 //! unattributed transcripts are not a source of official quota per device.
-use chrono::{DateTime, Utc};
+use crate::timestamps::{parse_rfc3339, unix_millis};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -9,6 +9,7 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::Path,
 };
+use time::OffsetDateTime;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,17 +29,14 @@ const MAX_SCAN: u64 = 192 * 1024 * 1024;
 const MAX_LINE: u64 = 8 * 1024 * 1024;
 
 fn time(value: &Value) -> Option<i64> {
-    value
-        .as_str()?
-        .parse::<DateTime<Utc>>()
-        .ok()
-        .map(|date| date.timestamp_millis())
+    parse_rfc3339(value.as_str()?).ok().map(unix_millis)
 }
 
-fn windows(quota: &crate::quota::QuotaSet, now: DateTime<Utc>) -> Vec<Window> {
+fn windows(quota: &crate::quota::QuotaSet, now: OffsetDateTime) -> Vec<Window> {
     if quota.error.is_some() {
         return Vec::new();
     }
+    let now = unix_millis(now);
     quota
         .windows
         .iter()
@@ -49,14 +47,9 @@ fn windows(quota: &crate::quota::QuotaSet, now: DateTime<Utc>) -> Vec<Window> {
                 "Weekly" => 168,
                 _ => return None,
             };
-            let reset = entry
-                .resets_at
-                .as_deref()?
-                .parse::<DateTime<Utc>>()
-                .ok()?
-                .timestamp_millis();
+            let reset = unix_millis(parse_rfc3339(entry.resets_at.as_deref()?).ok()?);
             let start = reset - hours * 3_600_000;
-            (start <= now.timestamp_millis() && now.timestamp_millis() < reset).then(|| Window {
+            (start <= now && now < reset).then(|| Window {
                 start,
                 sample: Sample {
                     window: entry.window.clone(),
@@ -149,7 +142,7 @@ fn aggregate(
     user: &str,
     account: &str,
     mut windows: Vec<Window>,
-    now: DateTime<Utc>,
+    now: OffsetDateTime,
 ) -> Vec<Sample> {
     let Some(first) = windows.iter().map(|window| window.start).min() else {
         return Vec::new();
@@ -181,7 +174,7 @@ fn aggregate(
             let Ok(modified) = metadata.modified() else {
                 continue;
             };
-            if DateTime::<Utc>::from(modified).timestamp_millis() < first {
+            if unix_millis(OffsetDateTime::from(modified)) < first {
                 continue;
             }
             if metadata.len() > MAX_FILE || metadata.len() > budget {
@@ -196,7 +189,7 @@ fn aggregate(
                 user,
                 account,
                 &windows,
-                now.timestamp_millis(),
+                unix_millis(now),
             ) {
                 if !seen.insert(id) {
                     continue;
@@ -217,7 +210,7 @@ fn aggregate(
 pub(crate) fn samples(
     profile: &str,
     quota: &crate::quota::QuotaSet,
-    now: DateTime<Utc>,
+    now: OffsetDateTime,
 ) -> Vec<Sample> {
     let Some((user, account)) = crate::profiles::device_token_identity(profile) else {
         return Vec::new();
@@ -251,10 +244,7 @@ mod tests {
             row(4, 450),
             row(7, 600)
         );
-        let first = "2026-11-15T12:02:00Z"
-            .parse::<DateTime<Utc>>()
-            .unwrap()
-            .timestamp_millis();
+        let first = unix_millis(parse_rfc3339("2026-11-15T12:02:00Z").unwrap());
         let windows = [Window {
             start: first,
             sample: Sample {

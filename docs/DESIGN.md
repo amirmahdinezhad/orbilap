@@ -2,6 +2,30 @@
 
 ## Current system
 
+In Settings → Updates, the app name and logo anchor the card. Show the installed
+version below the name until an update is offered. Check updates uses the shared
+secondary button variant so its fill stays visible while it is busy. Its
+keyboard focus ring uses the home focus token. The offered version and shared
+secondary What's new button with the List icon occupy a separate row.
+Expand or collapse that row with the same 180ms grid-track and opacity motion after checking or
+skipping. Keyboard and reduced-motion responses are immediate. Keep Skip and
+Download paired in the shared action row. During download, give the stage label
+and percent their own line above the shared progress bar. Retarget the fill
+linearly over 220ms as bytes arrive. Keep the indeterminate sweep separate from
+the fill, with a static track treatment under reduced motion. The explicit
+Install & relaunch action appears after the download finishes.
+Open release notes in the shared
+nested dialog so long notes scroll in its body and the download and skip
+controls keep their position. Render feed notes as text, with headings and
+bullets, on the opaque shared popover surface for readability above Settings.
+Use the shared dialog entrance, exit and circular
+Close control. Keyboard and reduced-motion interactions open immediately.
+Escape closes the notes and restores focus to What's new.
+For local testing, run `VITE_ORBILAP_PREVIEW_UPDATE=1 pnpm run dev:restart`,
+then check for updates in Settings. The synthetic offer simulates checking,
+download progress, installation and relaunch in the real UI. It makes no
+updater requests, writes no updater preferences and never relaunches the app.
+
 The Orbilap app icon lets modern macOS apply its own rounded mask to the
 dark tile through the bundled icon catalog. The legacy bundle, panel and
 favicon use the corresponding pre-masked artwork. The menu bar uses the

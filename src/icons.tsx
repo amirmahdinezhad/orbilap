@@ -1,7 +1,7 @@
 import {
   Browser, File, Folder, Laptop, Activity, AlertCircle, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Calendar, ChartBar, Check, CheckCircle,
   ChevronDown, ChevronLeft, ChevronRight, Clock, Close, Copy, Download, Edit, Eye, InfoCircle, Lock,
-  Layers, Logout, MoreHorizontal, Password, PieChart, Plus, Refresh, Search, Settings, Trash, Type, Undo, User,
+  Layers, List, Logout, MoreHorizontal, Password, PieChart, Plus, Refresh, Search, Settings, Trash, Type, Undo, User,
 } from "@neaticons/react";
 import { Settings as SharpSettings } from "@neaticons/react/sharp-stroke";
 
@@ -35,6 +35,7 @@ export const ExternalLinkIcon = neat(ArrowUpRight);
 export const RefreshIcon = neat(Refresh);
 export const DownloadIcon = neat(Download);
 export const SearchIcon = neat(Search);
+export const ListIcon = neat(List);
 
 export function SpinnerIcon({ size = 16, className }: IconProps) {
   return (

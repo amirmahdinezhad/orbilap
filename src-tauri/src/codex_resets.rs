@@ -81,17 +81,17 @@ struct Meta {
 }
 
 fn valid_date(value: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(value).is_ok()
+    crate::timestamps::parse_rfc3339(value).is_ok()
 }
 
 fn parse_status(response: StatusResponse) -> Result<CodexResetStatus, String> {
-    let generated = chrono::DateTime::parse_from_rfc3339(&response.meta.generated_at)
+    let generated = crate::timestamps::parse_rfc3339(&response.meta.generated_at)
         .map_err(|_| "Reset outlook format is unsupported")?;
     if response.meta.api_version != "v1" {
         return Err("Reset outlook format is unsupported".into());
     }
     if let Some(reset) = &response.data.latest_reset {
-        let reported = chrono::DateTime::parse_from_rfc3339(&reset.announced_at)
+        let reported = crate::timestamps::parse_rfc3339(&reset.announced_at)
             .map_err(|_| "Completed reset metadata is invalid")?;
         if reset.id.trim().is_empty() || reset.id.len() > 64 || reported > generated {
             return Err("Completed reset metadata is invalid".into());

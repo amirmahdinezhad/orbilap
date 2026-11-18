@@ -112,7 +112,7 @@
 .ak-dialog :is(.workspace-manage-list, .account-preference-section, .profile-row, .account-connection, .update-card) {
   background: var(--home-inset); border-color: var(--home-divider); border-radius: var(--ui-radius);
 }
-.ak-dialog :is(.workspace-manage-row, .account-preference-section > summary, .update-release-notes > summary) {
+.ak-dialog :is(.workspace-manage-row, .account-preference-section > summary) {
   transition: color 160ms ease, background-color 160ms ease;
 }
 .ak-dialog :is(.settings-panel, .workspace-settings-card .ui-tabs-content)[data-state="active"] {

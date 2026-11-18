@@ -407,7 +407,7 @@ fn publish(link: &Link) -> (Result<Group, Failure>, Option<crate::quota::QuotaSe
         .filter(|_| link.provider == "codex")
     {
         body["samples"] = json!(quota.as_ref().map_or_else(Vec::new, |quota| {
-            crate::device_usage::samples(profile, quota, chrono::Utc::now())
+            crate::device_usage::samples(profile, quota, time::OffsetDateTime::now_utc())
         }));
         let official: Vec<_> = quota
             .as_ref()
@@ -421,9 +421,9 @@ fn publish(link: &Link) -> (Result<Group, Failure>, Option<crate::quota::QuotaSe
                 {
                     return None;
                 }
-                let reset = chrono::DateTime::parse_from_rfc3339(window.resets_at.as_deref()?)
-                    .ok()?
-                    .timestamp_millis();
+                let reset = crate::timestamps::unix_millis(
+                    crate::timestamps::parse_rfc3339(window.resets_at.as_deref()?).ok()?,
+                );
                 Some(
                     json!({"window": &window.window, "resetsAt": reset, "percent": window.percent}),
                 )
@@ -632,7 +632,7 @@ fn notify_overages(app: &tauri::AppHandle, path: &Path, link: &Link, group: Grou
     if group.device_id != link.device_id || group.alerts.is_empty() {
         return;
     }
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::timestamps::unix_millis(time::OffsetDateTime::now_utc());
     let receipt_path = path.with_extension("alerts");
     let mut receipts: BTreeMap<String, i64> = fs::symlink_metadata(&receipt_path)
         .ok()

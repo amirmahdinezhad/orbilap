@@ -231,7 +231,7 @@ fn create_in(root: &Path, current: &Path, raw: &str, use_current: bool) -> Resul
         id,
         name,
         config_dir: config,
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: crate::timestamps::now_rfc3339(),
         email: None,
         connected: false,
         subscription: None,
@@ -392,7 +392,7 @@ pub(crate) fn adopt_config(name: &str, config: &Path, email: Option<String>, sub
     if let Some(profile) = index.profiles.iter().find(|p| p.config_dir == config) { return Ok((profile.id.clone(), false)); }
     let name = name.trim(); validate_name(name)?;
     let id = uuid::Uuid::new_v4().to_string();
-    index.profiles.push(ClaudeProfile { id: id.clone(), name: name.into(), config_dir: config.into(), created_at: chrono::Utc::now().to_rfc3339(), email, connected: true, subscription: Some(subscription) });
+    index.profiles.push(ClaudeProfile { id: id.clone(), name: name.into(), config_dir: config.into(), created_at: crate::timestamps::now_rfc3339(), email, connected: true, subscription: Some(subscription) });
     save(&root(), &index)?;
     Ok((id, true))
 }

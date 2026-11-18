@@ -13,7 +13,7 @@ pub(crate) struct Snapshot {
 
 fn date(value: &Value) -> Option<String> {
     let text = value.as_str()?;
-    chrono::DateTime::parse_from_rfc3339(text).ok()?;
+    crate::timestamps::parse_rfc3339(text).ok()?;
     Some(text.to_owned())
 }
 
@@ -25,7 +25,7 @@ fn parse(payload: &Value) -> Option<Snapshot> {
             payment_required,
             payment_due_at: payment_required.then(|| date(&payload["became_delinquent_timestamp"])).flatten(),
             grace_period_ends_at: payment_required.then(|| date(&payload["grace_period_end_timestamp"])).flatten(),
-            checked_at: chrono::Utc::now().to_rfc3339(),
+            checked_at: crate::timestamps::now_rfc3339(),
         },
         active_until: date(&payload["active_until"]),
     })

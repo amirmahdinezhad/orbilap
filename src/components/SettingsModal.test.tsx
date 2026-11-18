@@ -81,6 +81,8 @@ describe("SettingsModal updates", () => {
     await user.click(button);
     expect(notify).toHaveBeenCalledWith("Checking for updates…");
     const checking = screen.getByRole("button", { name: "Checking for updates" });
+    expect(checking).toBe(button);
+    expect(checking).toHaveClass("ui-button-secondary");
     expect(checking).toBeDisabled();
     expect(checking).toHaveAttribute("aria-busy", "true");
     expect(screen.queryByText("Checking for updates…")).not.toBeInTheDocument();
@@ -106,7 +108,10 @@ describe("SettingsModal updates", () => {
 
   it("offers download and skip with release notes when an update exists", async () => {
     const user = userEvent.setup();
-    mockCheck.mockResolvedValue(fakeUpdate());
+    mockCheck.mockResolvedValue({
+      ...fakeUpdate(),
+      body: "# Orbilap 9.9.9\n\n## Fixes\n\n- Bug fixes.\n- <script>plain text</script>",
+    });
     const notify = vi.fn();
     renderModal(makeState(), notify);
     await openUpdatesTab(user);
@@ -114,13 +119,23 @@ describe("SettingsModal updates", () => {
     await user.click(screen.getByRole("button", { name: "Check for updates" }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith("Version 9.9.9 is available", "ok"));
     expect(screen.queryByText("Version 9.9.9 is available")).not.toBeInTheDocument();
-    expect(screen.getByText("Bug fixes.")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Download update" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Skip this version" }),
-    ).toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: "What's new" });
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(screen.queryByText("Bug fixes.")).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    const notes = screen.getByRole("dialog", { name: "What's new" });
+    expect(within(notes).getByText("Version 9.9.9")).toBeVisible();
+    expect(within(notes).getByRole("heading", { name: "Fixes" })).toBeVisible();
+    expect(within(notes).getByRole("list")).toHaveTextContent("Bug fixes.");
+    expect(within(notes).getByText("<script>plain text</script>")).toBeVisible();
+    expect(within(notes).getByRole("region", { name: "Release notes" })).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "What's new" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Download update" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Skip this version" })).toBeEnabled();
   });
 
   it("manual checks reveal a skipped release again", async () => {
@@ -137,6 +152,7 @@ describe("SettingsModal updates", () => {
 
     expect(localStorage.getItem(SKIPPED_UPDATE_KEY)).toBe("9.9.9");
     expect(notify).toHaveBeenCalledWith("Version 9.9.9 skipped", "ok");
+    expect(screen.queryByRole("button", { name: "What's new" })).not.toBeInTheDocument();
     expect(screen.queryByText("You're on the latest version.")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Check for updates" }));
@@ -288,7 +304,8 @@ describe("restored global settings tabs", () => {
     expect(await screen.findByRole("button", { name: "Install & relaunch" })).toBeInTheDocument();
     expect(mockCheck).toHaveBeenCalledTimes(1);
     expect(update.install).not.toHaveBeenCalled();
-    expect(screen.getByText("Bug fixes.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "What's new" }));
+    expect(within(screen.getByRole("dialog", { name: "What's new" })).getByText("Bug fixes.")).toBeVisible();
   });
   it("leaves the saved theme intact when a reset cannot be saved", async () => {
     const { setAppSettings } = await import("../api"); const user = userEvent.setup();

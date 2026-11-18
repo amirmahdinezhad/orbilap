@@ -234,8 +234,9 @@ fn codex_window(bucket: &serde_json::Value, label: String) -> Option<QuotaWindow
     let resets_at = bucket
         .get("reset_at")
         .and_then(|v| v.as_i64())
-        .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
-        .map(|d| d.to_rfc3339());
+        .and_then(|seconds| time::OffsetDateTime::from_unix_timestamp(seconds).ok())
+        .filter(|date| date.year() >= 0)
+        .map(crate::timestamps::format_rfc3339);
     Some(QuotaWindow {
         window: label,
         percent,

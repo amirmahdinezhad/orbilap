@@ -1,4 +1,3 @@
-import { DisclosureSummary } from "./ui/disclosure-summary";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
@@ -28,6 +27,33 @@ import type { ToastKind } from "./Toast";
 import { AppLogo } from "../logos";
 import { DownloadIcon, LogoutIcon, RefreshIcon, ResetIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { WorkspaceSettings } from "./WorkspaceSettings";
+import { ReleaseNotesDialog } from "./ReleaseNotesDialog";
+
+type OfferedUpdate = Pick<Update, "version" | "body" | "download" | "install"> & { preview?: true };
+
+const previewDelay = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const previewUpdate: OfferedUpdate | null = import.meta.env.DEV && import.meta.env.VITE_ORBILAP_PREVIEW_UPDATE === "1"
+  ? {
+    preview: true,
+    version: "9.9.9",
+    body: [
+      "# Orbilap 9.9.9",
+      "This is a local preview of the release notes.",
+      "## What's changed\n\n- Read updates in a dedicated window with room for longer notes.\n- See reset times and remaining usage at a glance.\n- Keep your place in Settings when you close the notes.",
+    ].join("\n\n"),
+    async download(onEvent) {
+      await previewDelay(400);
+      onEvent?.({ event: "Started", data: { contentLength: 100 } });
+      for (let chunk = 0; chunk < 25; chunk++) {
+        await previewDelay(120);
+        onEvent?.({ event: "Progress", data: { chunkLength: 4 } });
+      }
+      await previewDelay(300);
+      onEvent?.({ event: "Finished" });
+    },
+    install: () => previewDelay(1000),
+  }
+  : null;
 
 /** localStorage key remembering the version the user asked to skip. */
 export const SKIPPED_UPDATE_KEY = "orbilap.skippedUpdateVersion";
@@ -168,18 +194,22 @@ export function SettingsModal({
     lastAttempt.current = Date.now();
     setPhase({ kind: "checking" });
     if (!automatic) notify("Checking for updates…");
-    void check().then(async (found) => {
-      try { localStorage.setItem("orbilap.lastUpdateCheck", new Date().toISOString()); } catch { /* Optional history. */ }
+    const request: Promise<OfferedUpdate | null> = previewUpdate
+      ? previewDelay(450).then(() => previewUpdate) : check();
+    void request.then(async (found) => {
+      if (!previewUpdate) {
+        try { localStorage.setItem("orbilap.lastUpdateCheck", new Date().toISOString()); } catch { /* Optional history. */ }
+      }
       if (!found || (automatic && found.version === skippedVersion())) {
         setPhase({ kind: "current" });
         if (!automatic) notify("You're on the latest version.", "ok");
         return;
       }
       setPhase({ kind: "available", update: found });
-      notify(`Version ${found.version} is available`, "ok");
+      notify(`${import.meta.env.DEV && found.preview ? "Preview version" : "Version"} ${found.version} is available`, "ok");
       if (automatic) {
-        setPhase({ kind: "downloading", progress: null });
-        await downloadUpdate(found, (progress) => setPhase({ kind: "downloading", progress }));
+        setPhase({ kind: "downloading", update: found, progress: null });
+        await downloadUpdate(found, (progress) => setPhase({ kind: "downloading", update: found, progress }));
         setPhase({ kind: "downloaded", update: found });
         notify(`Version ${found.version} downloaded`, "ok");
       }
@@ -190,7 +220,7 @@ export function SettingsModal({
 
   // This component remains mounted while Settings and the tray are closed.
   useEffect(() => {
-    if (!display.checkUpdatesOnLaunch) return;
+    if (previewUpdate || !display.checkUpdatesOnLaunch) return;
     const dailyCheck = () => {
       if (updateBusy.current || phase.kind === "available" || phase.kind === "downloaded" || phase.kind === "installing") return;
       let checked = 0;
@@ -203,28 +233,37 @@ export function SettingsModal({
 
   const skipVersion = useCallback(
     (version: string) => {
-      setSkippedVersion(version);
+      if (!previewUpdate) setSkippedVersion(version);
       setPhase({ kind: "current" });
       notify(`Version ${version} skipped`, "ok");
     },
     [notify],
   );
 
-  const downloadOnly = useCallback((update: Update) => {
+  const downloadOnly = useCallback((update: OfferedUpdate) => {
     if (updateBusy.current) return;
-    updateBusy.current = true; setPhase({ kind: "downloading", progress: null });
+    updateBusy.current = true; setPhase({ kind: "downloading", update, progress: null });
     notify("Downloading update…");
-    void downloadUpdate(update, (progress) => setPhase({ kind: "downloading", progress }))
+    void downloadUpdate(update, (progress) => setPhase({ kind: "downloading", update, progress }))
       .then(() => { setPhase({ kind: "downloaded", update }); notify(`Version ${update.version} downloaded`, "ok"); })
       .catch((e) => { const message = prettyError(e); setPhase({ kind: "failed" }); notify(message, "err"); })
       .finally(() => { updateBusy.current = false; });
   }, [notify]);
 
-  const installAndRelaunch = useCallback((update: Update) => {
+  const installAndRelaunch = useCallback((update: OfferedUpdate) => {
     if (updateBusy.current) return;
-    updateBusy.current = true; setPhase({ kind: "installing" });
+    updateBusy.current = true; setPhase({ kind: "installing", update });
     notify("Installing update…");
-    void update.install().then(() => relaunch())
+    void update.install().then(async () => {
+      if (import.meta.env.DEV && update.preview) {
+        setPhase({ kind: "preview-relaunching", update });
+        await previewDelay(750);
+        setPhase({ kind: "preview-installed", version: update.version });
+        notify("Preview complete. No changes were installed.", "ok");
+        return;
+      }
+      await relaunch();
+    })
       .catch((e) => { const message = prettyError(e); setPhase({ kind: "failed" }); notify(message, "err"); })
       .finally(() => { updateBusy.current = false; });
   }, [notify]);
@@ -426,7 +465,7 @@ export function SettingsModal({
 }
 
 /** Shared progress accounting for manual and automatic downloads. */
-async function downloadUpdate(update: Update, onProgress: (progress: number | null) => void) {
+async function downloadUpdate(update: OfferedUpdate, onProgress: (progress: number | null) => void) {
   let total = 0, done = 0;
   await update.download((event: DownloadEvent) => {
     if (event.event === "Started") { total = event.data.contentLength ?? 0; done = 0; }
@@ -439,10 +478,12 @@ type UpdatePhase =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "current" }
-  | { kind: "available"; update: Update }
-  | { kind: "downloading"; progress: number | null }
-  | { kind: "downloaded"; update: Update }
-  | { kind: "installing" }
+  | { kind: "available"; update: OfferedUpdate }
+  | { kind: "downloading"; update: OfferedUpdate; progress: number | null }
+  | { kind: "downloaded"; update: OfferedUpdate }
+  | { kind: "installing"; update: OfferedUpdate }
+  | { kind: "preview-relaunching"; update: OfferedUpdate }
+  | { kind: "preview-installed"; version: string }
   | { kind: "failed" };
 
 function UpdateRows({
@@ -457,67 +498,92 @@ function UpdateRows({
   currentVersion: string | null;
   onCheck: () => void;
   onSkip: (version: string) => void;
-  onDownload: (update: Update) => void;
-  onInstallRelaunch: (update: Update) => void;
+  onDownload: (update: OfferedUpdate) => void;
+  onInstallRelaunch: (update: OfferedUpdate) => void;
 }) {
+  const update = "update" in phase ? phase.update : null;
+  const label = update && (import.meta.env.DEV && update.preview ? `Preview ${update.version}`
+    : phase.kind === "downloaded" ? `${update.version} ready` : `Version ${update.version}`);
+  // Keep the text and button in layout until the grid track collapses.
+  const [lastRelease, setLastRelease] = useState<{ version: string; body?: string; label: string } | null>(null);
+  if (update && label && (lastRelease?.label !== label || lastRelease.body !== update.body)) {
+    setLastRelease({ version: update.version, body: update.body, label });
+  }
+  const previewRelaunching = import.meta.env.DEV && phase.kind === "preview-relaunching";
+  const installing = phase.kind === "installing" || previewRelaunching;
+  const checking = phase.kind === "checking";
+  const checkLabel = installing ? (previewRelaunching ? "Relaunching…" : "Installing…")
+    : checking ? "Checking…" : "Check updates";
   return (
     <div className="update-card">
       <div className="update-brand">
         <AppLogo />
         <div>
           <h3>Orbilap</h3>
-          <p>Switch AI accounts in seconds and see usage at a glance.</p>
-          <p>
-            Version <span>{currentVersion ?? "…"}</span>
-          </p>
+          {import.meta.env.DEV && phase.kind === "preview-installed" ? <p>Preview {phase.version} complete</p>
+            : !update ? <p>Version <span>{currentVersion ?? "…"}</span></p> : null}
         </div>
       </div>
-      {(phase.kind === "available" || phase.kind === "downloaded") && phase.update.body ? (
-        <details className="update-release-notes">
-          <DisclosureSummary>What's new</DisclosureSummary>
-          <p className="setting-note release-notes">{phase.update.body}</p>
-        </details>
-      ) : null}
-      {phase.kind === "downloading" ? (
-        <>
-          <Progress
-            aria-label="Download progress"
-            className={`update-progress${phase.progress === null ? " indeterminate" : ""}`}
-            value={
-              phase.progress === null
-                ? undefined
-                : Math.round(phase.progress * 100)
-            }
-          />
-        </>
-      ) : phase.kind === "available" ? (
-        <div className="action-row update-choice-actions">
-          <Button onClick={() => onSkip(phase.update.version)}>Skip this version</Button>
-          <Button variant="default" onClick={() => onDownload(phase.update)}>
-            <DownloadIcon size={18} />Download update
-          </Button>
+      <div className="update-controls">
+        <div className="update-release-reveal" data-open={!!update} inert={!update} aria-hidden={!update}>
+          <div className="update-release-clip">
+            {lastRelease ? (
+              <div className="update-release">
+                <p>{lastRelease.label}</p>
+                {lastRelease.body?.trim() ? (
+                  <ReleaseNotesDialog key={lastRelease.version} version={lastRelease.version} body={lastRelease.body} disabled={installing} />
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
-      ) : phase.kind === "downloaded" ? (
-        <Button
-          variant="default"
-          className="update-primary"
-          onClick={() => onInstallRelaunch(phase.update)}
-        >
-          <RefreshIcon size={18} />Install & relaunch
-        </Button>
-      ) : (
-        <Button
-          variant="ghost"
-          className="update-check"
-          aria-label={phase.kind === "installing" ? "Installing update" : phase.kind === "checking" ? "Checking for updates" : "Check for updates"}
-          aria-busy={phase.kind === "checking" || phase.kind === "installing"}
-          onClick={onCheck}
-          disabled={phase.kind === "checking" || phase.kind === "installing"}
-        >
-          {phase.kind === "checking" || phase.kind === "installing" ? <SpinnerIcon size={18} /> : <SearchIcon size={18} />}
-          {phase.kind === "installing" ? "Installing…" : phase.kind === "checking" ? "Checking…" : "Check updates"}
-        </Button>
-      )}
+        <div className="update-action">
+          {phase.kind === "downloading" ? (
+            <div className="update-download-progress">
+              <p aria-hidden="true">
+                <span>Downloading…</span>
+                {phase.progress === null ? null : <span>{Math.round(phase.progress * 100)}%</span>}
+              </p>
+              <Progress
+                aria-label="Download progress"
+                className={`update-progress${phase.progress === null ? " indeterminate" : ""}`}
+                value={phase.progress === null ? undefined : Math.round(phase.progress * 100)}
+              />
+            </div>
+          ) : phase.kind === "available" ? (
+            <div className="action-row update-choice-actions">
+              <Button aria-label="Skip this version" onClick={() => onSkip(phase.update.version)}>Skip</Button>
+              <Button
+                variant="default"
+                aria-label="Download update"
+                onClick={() => onDownload(phase.update)}
+              >
+                <DownloadIcon size={18} />Download
+              </Button>
+            </div>
+          ) : phase.kind === "downloaded" ? (
+            <Button
+              variant="default"
+              className="update-primary"
+              onClick={() => onInstallRelaunch(phase.update)}
+            >
+              <RefreshIcon size={18} />Install & relaunch
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              className="update-check"
+              aria-label={previewRelaunching ? "Relaunching preview" : installing ? "Installing update" : checking ? "Checking for updates" : "Check for updates"}
+              aria-busy={checking || installing}
+              onClick={onCheck}
+              disabled={checking || installing}
+            >
+              {checking || installing ? <SpinnerIcon size={18} /> : <SearchIcon size={18} />}
+              {checkLabel}
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

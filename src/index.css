@@ -1197,12 +1197,6 @@ span.pace-label { background: none; }
 /* ── updater ────────────────────────────────────────────────────────────── */
 .update-progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .update-actions { display: inline-flex; align-items: center; gap: 10px; }
-.release-notes {
-  white-space: pre-wrap; word-break: break-word;
-  max-height: 120px; overflow-y: auto;
-  background: var(--raised-dark); border: 1px solid var(--line);
-  border-radius: 6px; padding: 6px 8px;
-}
 
 /* ── quota windows (read-only provider limits, percent bars) ──────────── */
 .quota-section { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
@@ -1488,17 +1482,12 @@ button.ui-switch:disabled { opacity: 0.45; cursor: default; }
 .settings-footer { border: none; padding-top: 0; margin-top: 0; justify-content: flex-start; }
 .reset-settings { font-size: 12px; color: var(--muted); }
 .update-card { display: flex; flex-direction: column; gap: 16px; padding: 18px; border: 1px solid var(--inset-line); border-radius: var(--ui-radius); background: var(--inset); }
-.update-brand { display: flex; align-items: center; gap: 10px; }
-.update-brand .app-mark { width: 64px; height: 64px; flex-shrink: 0; }
+.update-brand { display: flex; min-width: 0; align-items: center; gap: 10px; overflow-wrap: anywhere; }
+.update-brand .app-mark { width: 56px; height: 56px; flex-shrink: 0; }
 .update-brand h3 { margin: 0; font-size: 16px; color: var(--title); font-weight: 600; }
 .update-brand p { margin: 2px 0 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .update-primary { width: 100%; min-height: 36px; }
 .update-skip { align-self: center; color: var(--muted); font-size: 12px; }
-.update-release-notes { font-size: 12px; color: var(--muted); }
-.update-release-notes summary { cursor: pointer; }
-.update-release-notes summary:focus-visible { outline: none; border-radius: 3px; }
-.update-release-notes .release-notes { padding: 8px 10px; margin-top: 8px; }
-.update-progress.indeterminate .ui-progress-indicator { width: 40%; animation: progress-travel 1.2s ease-in-out infinite; }
 
 .modal-head .icon, [data-slot="button"].modal-head .icon { color: var(--muted); }
 
@@ -1606,8 +1595,7 @@ button.ui-switch, .ui-switch-thumb { transition-duration: 200ms; transition-timi
     to { transform: translateX(350%); }
 }
 @media (prefers-reduced-motion: reduce) {
-    .settings-panel[data-state="active"], .cli-card, .wizard-pane, .setup-card .stack,
-    .update-progress.indeterminate .ui-progress-indicator { animation: none; }
+    .settings-panel[data-state="active"], .cli-card, .wizard-pane, .setup-card .stack { animation: none; }
     .ios-segments::before, .ui-button,
     .ui-slider-thumb, button.ui-switch, .ui-switch-thumb, .wizard-dot, .wizard-line { transition: none; }
     .ui-slider-thumb:active { transform: none; }

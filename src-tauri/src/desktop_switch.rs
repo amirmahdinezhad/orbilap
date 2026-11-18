@@ -342,8 +342,9 @@ impl DesktopSwitch {
         let status = SwitchStatus {
             profile_id: id.into(),
             profile_name: profile.name.clone(),
-            deadline_at: (chrono::Utc::now() + chrono::Duration::seconds(grace.as_secs() as i64))
-                .to_rfc3339(),
+            deadline_at: crate::timestamps::format_rfc3339(
+                time::OffsetDateTime::now_utc() + time::Duration::seconds(grace.as_secs() as i64),
+            ),
             phase: phase.into(),
             error: None,
             process_id: None,

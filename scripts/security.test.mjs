@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { acceptsChronoWarning, acceptsPicomatchFinding, resolvedLockfile } from "./security.mjs";
+import { packagesFromTree, resolvedLockfile } from "./security.mjs";
 
 const config = JSON.parse(
   readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url)),
@@ -12,27 +12,12 @@ const capability = JSON.parse(
   ),
 );
 
-test("the accepted picomatch finding cannot extend to another version, lockfile or advisory", () => {
-  const lock = "0b5d2d09850e58e3626b3552e9dcdff3f1b8a629b31258994e49fa00e9444704";
-  const finding = {
-    module_name: "picomatch", github_advisory_id: "GHSA-fc5q-39xc-vjpf",
-    cves: ["CVE-2026-112366"], patched_versions: "<0.0.0",
-    findings: [{ version: "4.0.7" }],
-  };
-  const report = { advisories: { accepted: finding } };
-  assert.ok(acceptsPicomatchFinding(report, "1.0.1", lock, "4.0.7"));
-  assert.ok(!acceptsPicomatchFinding(report, "1.0.2", lock, "4.0.7"));
-  assert.ok(!acceptsPicomatchFinding(report, "1.0.1", "other lock", "4.0.7"));
-  assert.ok(!acceptsPicomatchFinding(report, "1.0.1", lock, "4.0.8"));
-  assert.ok(!acceptsPicomatchFinding({ advisories: { accepted: { ...finding, patched_versions: ">=4.0.8" } } }, "1.0.1", lock, "4.0.7"));
-  assert.ok(!acceptsPicomatchFinding({ advisories: { accepted: finding, other: {} } }, "1.0.1", lock, "4.0.7"));
-});
-
-test("the accepted chrono warning applies only to the reviewed 1.0.1 Rust lockfile", () => {
-  const lock = "07d14ec4ebc4255b5fa44a35ac3d88985d97d194116645d0a6ce2a16fbc41016";
-  assert.ok(acceptsChronoWarning("1.0.1", lock));
-  assert.ok(!acceptsChronoWarning("1.0.2", lock));
-  assert.ok(!acceptsChronoWarning("1.0.1", "other lock"));
+test("reads resolved Cargo packages with paths, build metadata and duplicate markers", () => {
+  assert.deepEqual(packagesFromTree(
+    "orbilap v1.0.2 (/path with spaces)\ntoml v1.1.6+spec-1.1.0 (*)\ntime v0.3.55\n",
+  ), ["orbilap@1.0.2", "toml@1.1.6+spec-1.1.0", "time@0.3.55"]);
+  assert.throws(() => packagesFromTree(""), /Unexpected Cargo package line/);
+  assert.throws(() => packagesFromTree("not a package"), /Unexpected Cargo package line/);
 });
 
 test("target audit keeps resolved package versions and removes other-target dependency edges", () => {
