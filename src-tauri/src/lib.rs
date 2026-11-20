@@ -188,7 +188,9 @@ async fn include_workspace_provider(app: AppHandle, workspace_id: String, provid
 }
 
 #[tauri::command]
-fn begin_account_setup() -> Result<String,String> { account_setup::begin() }
+fn begin_account_setup(reconnect_profile_id: Option<String>) -> Result<String,String> {
+    account_setup::begin(reconnect_profile_id)
+}
 #[tauri::command]
 async fn account_devices(account: device_sync::AccountRef, operation: device_sync::Operation) -> Result<device_sync::Outcome, String> {
     tauri::async_runtime::spawn_blocking(move || device_sync::run(account, operation))
@@ -234,10 +236,24 @@ async fn connect_current_google(session_id:String,name:String) -> Result<account
 async fn connect_setup_config(session_id:String, name:String, path:String) -> Result<account_setup::Account,String> {
     tauri::async_runtime::spawn_blocking(move || account_setup::connect_config(&session_id,&name,&path)).await.map_err(|_| "Cannot connect this configuration.".to_string())?
 }
+#[derive(Serialize)]
+struct ReconnectResult {
+    profiles: profiles::ProfilesState,
+    removed: bool,
+}
+
 #[tauri::command]
-async fn reconnect_setup_account(session_id:String, account_id:String, profile_id:String) -> Result<profiles::ProfilesState,String> {
-    tauri::async_runtime::spawn_blocking(move || account_setup::reconnect(&session_id,&account_id,&profile_id))
-        .await.map_err(|_| "Cannot reconnect this account.".to_string())?
+async fn reconnect_setup_account(app: AppHandle, session_id:String, account_id:String, profile_id:String) -> Result<ReconnectResult,String> {
+    let (profiles, saved) = tauri::async_runtime::spawn_blocking(move || account_setup::reconnect(&session_id,&account_id,&profile_id))
+        .await.map_err(|_| "Cannot reconnect this account.".to_string())??;
+    let removed = saved.is_some();
+    if let Some(saved) = saved {
+        app.state::<desktop_switch::DesktopSwitch>().forget_missing_profile(&profiles);
+        let monitor = app.state::<tray::MenuBarMonitor>();
+        monitor.update(&app, saved);
+        monitor.account_changed(&app);
+    }
+    Ok(ReconnectResult { profiles, removed })
 }
 #[tauri::command]
 async fn commit_account_setup(app:AppHandle, session_id:String, workspace_id:Option<String>, name:String, accent:String, account_ids:Vec<String>) -> Result<AppState,String> {

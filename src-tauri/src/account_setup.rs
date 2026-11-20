@@ -73,6 +73,7 @@ struct Draft {
     entries: Vec<Entry>,
     attempt: Option<Attempt>,
     antigravity_needs_fresh_login: bool,
+    reconnect_profile_id: Option<String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -234,9 +235,13 @@ fn add_entry_with_deadline(
     deadline: Option<std::time::Instant>,
 ) -> Result<Account, VerificationError> {
     let result = (|| {
-        let (identity, email, subscription) = if provider == "antigravity" {
+        let reconnecting = draft.reconnect_profile_id.is_some() && provider == "codex" && owned && existing.is_none();
+        let (identity, email, subscription) = if reconnecting {
+            profiles::inspect_reconnect(&home)?
+        } else if provider == "antigravity" {
             crate::antigravity::inspect_for_enrollment(&home, deadline)?
         } else { inspect_identity(provider, &home, existing.as_deref())? };
+        let confirming_free_plan = reconnecting && !subscription.is_paid();
         let already_added = match provider {
             // A saved credential can outlive its last workspace membership.
             // Only accounts still present in Orbilap should block enrollment.
@@ -258,7 +263,9 @@ fn add_entry_with_deadline(
             }
         }
         let auth = (provider == "codex").then(|| paths::read_json(&home.join("auth.json"))).flatten();
-        let display_name = if provider == "antigravity" {
+        let display_name = if confirming_free_plan {
+            None
+        } else if provider == "antigravity" {
             paths::read_json(&home.join("auth.json")).and_then(|auth| crate::antigravity::account_label(&auth))
         } else if provider == "codex" {
             verify_with_metadata(
@@ -297,7 +304,7 @@ fn add_entry_with_deadline(
             subscription,
             source: existing.as_ref().map(|_| AccountSource::Saved),
         };
-        if provider == "codex" && existing.is_none() && profiles::is_current_setup_identity(&identity) {
+        if provider == "codex" && existing.is_none() && !confirming_free_plan && profiles::is_current_setup_identity(&identity) {
             mark_active(draft, &mut account);
         }
         draft.entries.push(Entry {
@@ -343,13 +350,15 @@ impl Drop for Draft {
         }
     }
 }
-pub fn begin() -> Result<String, String> {
+pub fn begin(reconnect_profile_id: Option<String>) -> Result<String, String> {
     let mut sessions = SESSIONS.lock().map_err(|_| "Account setup is busy.")?;
     if sessions.len() >= 8 {
         return Err("Close another account setup before opening a new one.".into());
     }
     let id = uuid::Uuid::new_v4().to_string();
-    sessions.insert(id.clone(), Draft::default());
+    let mut draft = Draft::default();
+    draft.reconnect_profile_id = reconnect_profile_id;
+    sessions.insert(id.clone(), draft);
     Ok(id)
 }
 pub fn discard(id: &str) -> Result<(), String> {
@@ -853,6 +862,9 @@ pub fn commit(
     selected: &[String],
 ) -> Result<settings::AppSettings, String> {
     with_draft(id, |draft| {
+        if draft.reconnect_profile_id.is_some() {
+            return Err("Finish reconnecting this account first.".into());
+        }
         if draft.attempt.is_some() {
             return Err("Finish or cancel sign-in before saving.".into());
         }
@@ -1053,7 +1065,7 @@ mod tests {
         assert_eq!(std::env::var("ORBILAP_RUN_ORPHAN_LIVE").as_deref(), Ok("1"));
         struct Cleanup(String);
         impl Drop for Cleanup { fn drop(&mut self) { let _ = discard(&self.0); } }
-        let session = Cleanup(begin().unwrap());
+        let session = Cleanup(begin(None).unwrap());
         let initial = start(&session.0, "antigravity", "browser", "").unwrap();
         let started = std::time::Instant::now();
         loop {
@@ -1077,7 +1089,7 @@ mod tests {
         assert_eq!(std::env::var("ORBILAP_RUN_NEW_GOOGLE_LIVE").as_deref(), Ok("1"));
         struct Cleanup(String);
         impl Drop for Cleanup { fn drop(&mut self) { let _ = discard(&self.0); } }
-        let session = Cleanup(begin().unwrap());
+        let session = Cleanup(begin(None).unwrap());
         let login = start(&session.0, "antigravity", "browser", "").unwrap();
         let started = std::time::Instant::now();
         loop {
@@ -1107,7 +1119,7 @@ mod tests {
     #[test]
     #[ignore = "requires an existing paid local account; stages and discards live discovery"]
     fn live_discovery_finishes_within_five_seconds() {
-        let id = begin().unwrap();
+        let id = begin(None).unwrap();
         let started = std::time::Instant::now();
         let result = discover(&id, None);
         let elapsed = started.elapsed();
@@ -1367,7 +1379,7 @@ mod tests {
     }
     #[test]
     fn adding_an_already_saved_account_is_rejected_before_any_permanent_write() {
-        let session = begin().unwrap();
+        let session = begin(None).unwrap();
         let account_id = "already-saved".to_string();
         with_draft(&session, |draft| {
             draft.entries.push(Entry {
@@ -1400,7 +1412,7 @@ mod tests {
     fn unknown_session_or_provider_never_starts_authentication() {
         assert!(start("missing", "codex", "browser", "Test").is_err());
         assert!(start("missing", "claude", "file", "Test").is_err());
-        let session = begin().unwrap();
+        let session = begin(None).unwrap();
         for provider in ["gemini", "gemini-app"] {
             let error = start(&session, provider, "browser", "Test").err().unwrap();
             assert_eq!(error, "Choose an available sign-in method.");
@@ -1415,13 +1427,24 @@ mod tests {
     }
 }
 
-/// Save only an owned, verified Codex draft; credentials never cross back to JS.
-pub fn reconnect(id: &str, account_id: &str, profile_id: &str) -> Result<profiles::ProfilesState, String> {
+/// Apply the provider-verified plan to the saved identity targeted by this draft.
+pub fn reconnect(id: &str, account_id: &str, profile_id: &str) -> Result<(profiles::ProfilesState, Option<settings::AppSettings>), String> {
     with_draft(id, |draft| {
+        if draft.reconnect_profile_id.as_deref() != Some(profile_id) {
+            return Err("This sign-in belongs to a different reconnect request.".into());
+        }
         if draft.attempt.is_some() { return Err("Finish or cancel sign-in first.".into()); }
         let entry = draft.entries.iter().find(|entry| entry.account.id == account_id
             && entry.account.provider == "codex" && entry.owned)
             .ok_or("Verify a fresh ChatGPT login first.")?;
-        profiles::reconnect_file(profile_id, &entry.home.join("auth.json"))
+        let source = entry.home.join("auth.json");
+        if entry.account.subscription.plan.as_deref().is_some_and(crate::subscriptions::is_chatgpt_free_plan) {
+            let saved = workspaces::forget_free_reconnect(profile_id, &source)?;
+            return Ok((profiles::list()?, Some(saved)));
+        }
+        if !entry.account.subscription.is_paid() {
+            return Err("Couldn’t confirm this account’s ChatGPT plan. Try reconnecting again.".into());
+        }
+        Ok((profiles::reconnect_file(profile_id, &source)?, None))
     })
 }

@@ -38,6 +38,7 @@ import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { HomeHeader } from "./components/HomeChrome";
 import { isSubscriptionExpired } from "./subscriptions";
 import { useAccountClock } from "./useAccountClock";
+import { accountCard, afterRemovalFocus } from "./snapRemoval";
 
 const SettingsModal = lazy(() => import("./components/SettingsModal").then(({ SettingsModal }) => ({ default: SettingsModal })));
 const AddAccountsPanel = lazy(() => import("./components/AddAccountsPanel").then(({ AddAccountsPanel }) => ({ default: AddAccountsPanel })));
@@ -82,7 +83,7 @@ export default function App() {
   const [claudeSettingsId, setClaudeSettingsId] = useState<string | null>(null);
   const [accountSettings, setAccountSettings] = useState<{ id: string; hasBankedResets: boolean } | null>(null);
   const [reconnectId, setReconnectId] = useState<string | null>(null);
-  const reconnectReveal = useRef<{ workspaceId: string | undefined; accountId: string; name: string } | null>(null);
+  const reconnectResult = useRef<{ workspaceId: string | undefined; accountId: string; name: string; removed: boolean; returnFocus: HTMLElement | null } | null>(null);
   const [revealedAccount, setRevealedAccount] = useState<{ workspaceId: string | undefined; accountId: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const createOrigin = useRef<HTMLElement | null>(null);
@@ -433,15 +434,25 @@ export default function App() {
         onClose={() => setAccountSettings(null)} onChanged={changeState} onRename={async (name) => applyProfiles(await renameCodexProfile(profile.id, name))}
         bankedReset={hasBankedResets ? { refreshKey: usageRefreshKey, onUsed: () => setUsageRefreshKey(key => key + 1) } : undefined}
       />}</ModalTarget> : null}</Suspense>
-      <Suspense fallback={null}><ModalTarget target={reconnectAccount}>{(account, presence) => <ReconnectAccount {...presence} key={`${workspace?.id}:${account.id}`} profile={account} onClose={() => setReconnectId(null)} onProfilesChanged={applyProfiles}
-        onReconnected={() => { reconnectReveal.current = { workspaceId: workspace?.id, accountId: account.id, name: account.name }; setReconnectId(null); }}
+      <Suspense fallback={null}><ModalTarget target={reconnectAccount}>{(account, presence) => <ReconnectAccount {...presence} key={`${workspace?.id}:${account.id}`} profile={account} onClose={() => setReconnectId(null)}
+        onCompleted={({ profiles, removed }) => {
+          const card = removed ? accountCard("codex", account.id) : null;
+          reconnectResult.current = { workspaceId: workspace?.id, accountId: account.id, name: account.name, removed, returnFocus: card ? afterRemovalFocus(card) : null };
+          applyProfiles(profiles);
+          setReconnectId(null);
+        }}
         onExited={() => {
           presence.onExited();
-          const reveal = reconnectReveal.current;
-          reconnectReveal.current = null;
-          if (!reveal) return;
-          notify(`${reveal.name} reconnected successfully`, "ok");
-          if (latestWorkspace.current?.id === reveal.workspaceId) setRevealedAccount(reveal);
+          const result = reconnectResult.current;
+          reconnectResult.current = null;
+          if (!result) return;
+          if (result.removed) {
+            result.returnFocus?.focus({ preventScroll: true });
+            notify(`${result.name} was removed because its ChatGPT plan is Free.`);
+          } else {
+            notify(`${result.name} reconnected successfully`, "ok");
+            if (latestWorkspace.current?.id === result.workspaceId) setRevealedAccount(result);
+          }
         }} />}</ModalTarget></Suspense>
       <Suspense fallback={null}><AppModal open={createOpen} returnFocusRef={createOrigin} hasUnsavedChanges={createDraft.dirty} busy={createDraft.busy} onClose={() => { setCreateOpen(false); }} title="Create workspace" cardClass="workspace-setup-card"><WorkspaceSetup onAccountAdded={() => notify("Account added", "ok")} step={createStep} onStepChange={setCreateStep} onCreated={imported} onStatusChange={setCreateDraft} /></AppModal></Suspense>
       <Suspense fallback={null}><AppModal open={importOpen && !!workspace} hasUnsavedChanges={importDraft.dirty} busy={importDraft.busy} onClose={() => setImportOpen(false)} onBack={() => { setImportOpen(false); setAddOpen(true); }} backLabel="All providers" title="Add Codex account">{workspace ? <WorkspaceImportAccount workspace={workspace} onImported={imported} onStatusChange={setImportDraft} /> : null}</AppModal></Suspense>

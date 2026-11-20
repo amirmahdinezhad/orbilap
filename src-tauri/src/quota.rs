@@ -12,7 +12,7 @@
 //! - anything else → the raw status / transport error.
 
 use serde::Serialize;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::{codex, paths};
 
@@ -255,8 +255,17 @@ pub fn codex_quota_set() -> Option<QuotaSet> {
 
 /// Read the usage of a saved login without activating it.
 pub fn codex_quota_from_auth(raw: &serde_json::Value) -> Option<QuotaSet> {
-    if raw["tokens"]["id_token"].as_str().and_then(codex::jwt_payload)
-        .is_some_and(|claims| crate::subscriptions::chatgpt(&claims).is_expired()) {
+    codex_quota_with_timeout(raw, Duration::from_secs(10))
+}
+
+/// A panel metadata refresh must not wait for credential renewal.
+pub(crate) fn refresh_codex_plan(raw: &serde_json::Value) {
+    codex_quota_with_timeout(raw, Duration::from_secs(4));
+}
+
+fn codex_quota_with_timeout(raw: &serde_json::Value, timeout: Duration) -> Option<QuotaSet> {
+    let claims = raw["tokens"]["id_token"].as_str().and_then(codex::jwt_payload);
+    if claims.as_ref().is_some_and(|claims| crate::subscriptions::chatgpt(claims).is_expired()) {
         return None;
     }
     let (token, account_id, expires_at) = codex::oauth_access_from(raw)?;
@@ -283,12 +292,17 @@ pub fn codex_quota_from_auth(raw: &serde_json::Value) -> Option<QuotaSet> {
     };
     let mut request = client
         .get("https://chatgpt.com/backend-api/wham/usage")
+        .timeout(timeout)
         .header("Authorization", format!("Bearer {token}"))
         .header("Accept", "application/json")
         .header("User-Agent", "Orbilap");
-    if let Some(account) = account_id.as_deref().filter(|s| !s.is_empty()) {
+    let claimed_account = claims.as_ref().and_then(|claims|
+        claims["https://api.openai.com/auth"]["chatgpt_account_id"].as_str());
+    let account = account_id.as_deref().or(claimed_account).filter(|account| !account.is_empty());
+    if let Some(account) = account {
         request = request.header("ChatGPT-Account-Id", account);
     }
+    let started = Instant::now();
     let response = match request.send() {
         Ok(r) => r,
         Err(e) => {
@@ -312,6 +326,11 @@ pub fn codex_quota_from_auth(raw: &serde_json::Value) -> Option<QuotaSet> {
         Ok(j) => j,
         Err(e) => return Some(fail(format!("invalid response: {e}"))),
     };
+    Some(codex_quota_from_payload(raw, started, &json))
+}
+
+pub(crate) fn codex_quota_from_payload(raw: &serde_json::Value, started: Instant, json: &serde_json::Value) -> QuotaSet {
+    crate::subscription_billing::observe_usage_plan(raw, started, json);
     let rate_limit = json.get("rate_limit").cloned().unwrap_or_default();
     let mut windows = Vec::new();
     for key in ["primary_window", "secondary_window"] {
@@ -358,14 +377,20 @@ pub fn codex_quota_from_auth(raw: &serde_json::Value) -> Option<QuotaSet> {
         }
     }
     if windows.is_empty() {
-        return Some(fail("no quota windows in the response".to_string()));
+        return QuotaSet {
+            provider: "codex".into(),
+            windows: None,
+            error: Some("no quota windows in the response".into()),
+            reset_credits: None,
+            as_of: None,
+        };
     }
-    Some(QuotaSet {
+    QuotaSet {
         provider: "codex".to_string(),
         windows: Some(windows),
         error: None,
-        reset_credits: reset_summary(&json), as_of: None,
-    })
+        reset_credits: reset_summary(json), as_of: None,
+    }
 }
 
 #[cfg(test)]

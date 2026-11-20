@@ -109,8 +109,11 @@ export function WorkspaceAccounts({ workspace, profiles, app, quotas, busy, chec
         </div>
         </div>
         {needsReconnect ? <div className="account-connection-notice">
-          <div className="account-connection-status" role="status" aria-label={`Connection for ${profile.name}`}><KeyIcon size={15} /><span>Reconnect needed</span></div>
-          <ErrorToast message={!profile.connected ? profile.connectionError : null} /><p className="account-connection-note">Sign in again to restore usage for this account.</p>
+          <div className="account-connection-copy">
+            <div className="account-connection-status" role="status" aria-label={`Connection for ${profile.name}`}><KeyIcon size={15} /><span>Reconnect needed</span></div>
+            <p className="account-connection-note">Sign in again to restore usage.</p>
+          </div>
+          <ErrorToast message={!profile.connected ? profile.connectionError : null} />
           {onReconnect ? <Button variant="secondary" size="sm" className="account-reconnect" disabled={busy} onClick={() => onReconnect(profile.id)}><RefreshIcon size={15} />Reconnect</Button> : null}
         </div> : <AccountQuotaPreview quota={quota} accountName={profile.name} showRemaining={workspace.usage.showRemaining} />}
 

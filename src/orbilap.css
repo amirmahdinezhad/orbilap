@@ -188,7 +188,6 @@
   background: var(--orbilap-card);
   box-shadow: var(--orbilap-shadow-panel);
 }
-.home-accounts .account-card.is-disconnected { box-shadow: var(--orbilap-shadow-panel), inset 0 0 0 1px var(--home-warning); }
 /* Provider reset notices share the home cards' material and neutral controls. */
 .workspace-accounts > .codex-reset-notice {
   gap: 10px;

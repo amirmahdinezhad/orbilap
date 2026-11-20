@@ -10,7 +10,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
-use crate::paths;
+use crate::{paths, subscription_billing};
 
 static LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -36,6 +36,14 @@ struct Index {
     profiles: Vec<Profile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pending_expiry_removals: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pending_free_plan_removals: Vec<String>,
+}
+
+impl Index {
+    fn is_pending_removal(&self, id: &str) -> bool {
+        self.pending_expiry_removals.iter().chain(&self.pending_free_plan_removals).any(|pending| pending == id)
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -400,7 +408,7 @@ impl Repository {
     fn sync_current(&self, index: &Index, current: Option<&Login>) -> Result<(), String> {
         if let Some(current) = current {
             for profile in &index.profiles {
-                if index.pending_expiry_removals.contains(&profile.id) || self.has_pending_replacement(profile) {
+                if index.is_pending_removal(&profile.id) || self.has_pending_replacement(profile) {
                     continue;
                 }
                 if self.login(profile).ok().flatten().is_some_and(|saved| {
@@ -417,6 +425,14 @@ impl Repository {
     }
 
     fn state(&self) -> Result<ProfilesState, String> {
+        self.build_state(false)
+    }
+
+    fn panel_state(&self) -> Result<ProfilesState, String> {
+        self.build_state(true)
+    }
+
+    fn build_state(&self, hide_free_plans: bool) -> Result<ProfilesState, String> {
         let index = self.index()?;
         let switch_error = self.switch_error();
         let current = if switch_error.is_none() {
@@ -430,8 +446,9 @@ impl Repository {
         let mut identities: Vec<(Identity, String)> = Vec::new();
         for p in &index.profiles {
             let login = self.login(p).ok().flatten();
-            if index.pending_expiry_removals.contains(&p.id)
-                || login.as_ref().is_some_and(|l| l.subscription.is_expired())
+            if index.is_pending_removal(&p.id)
+                || login.as_ref().is_some_and(|login| login.subscription.is_expired()
+                    || (hide_free_plans && subscription_billing::live_plan_is_free(&login.raw)))
             {
                 continue;
             }
@@ -453,7 +470,7 @@ impl Repository {
                 plan: login.as_ref().and_then(|l| l.plan.clone()),
                 subscription: login.as_ref().map(|login| {
                     let mut subscription = login.subscription.clone();
-                    if let Some(snapshot) = crate::subscription_billing::cached(&login.raw) {
+                    if let Some(snapshot) = subscription_billing::cached(&login.raw) {
                         subscription.billing = Some(snapshot.billing);
                         if snapshot.active_until.is_some() { subscription.expires_at = snapshot.active_until; }
                     }
@@ -476,7 +493,8 @@ impl Repository {
         Ok(ProfilesState {
             profiles,
             active_profile_id,
-            can_import: current.is_some_and(|login| !login.subscription.is_expired()),
+            can_import: current.is_some_and(|login| !login.subscription.is_expired()
+                && (!hide_free_plans || !subscription_billing::live_plan_is_free(&login.raw))),
             desktop_installed: codex_desktop_installed(),
             cli_installed: crate::cli::which_binary("codex").is_some(),
             switch_error,
@@ -497,7 +515,7 @@ impl Repository {
             .any(|(saved_id, login)| saved_id == id && !login.subscription.is_expired()));
         let cancelled = pending_before != index.pending_expiry_removals.len();
         for (id, login) in &logins {
-            if Some(id.as_str()) == signing_in || !login.subscription.is_expired() || index.pending_expiry_removals.contains(id) {
+            if Some(id.as_str()) == signing_in || !login.subscription.is_expired() || index.is_pending_removal(id) {
                 continue;
             }
             let has_live_login = |other: &Login| other.identity == login.identity && !other.subscription.is_expired();
@@ -509,18 +527,21 @@ impl Repository {
             forget_resets(id, identity.as_deref())?;
             index.pending_expiry_removals.push(id.clone());
         }
-        let changed = cancelled || !index.pending_expiry_removals.is_empty();
-        if changed {
-            // Persist the work before removing credentials so a partial deletion can be retried.
-            self.save(&index)?;
-            for id in &index.pending_expiry_removals {
-                remove_account_home(&self.home(id)?)?;
-            }
-            index.profiles.retain(|profile| !index.pending_expiry_removals.contains(&profile.id));
-            index.pending_expiry_removals.clear();
-            self.save(&index)?;
-        }
+        let changed = cancelled || !index.pending_expiry_removals.is_empty() || !index.pending_free_plan_removals.is_empty();
+        if changed { self.finish_pending_removals(&mut index)?; }
         Ok((index.profiles.into_iter().map(|profile| profile.id).collect(), changed))
+    }
+
+    fn finish_pending_removals(&self, index: &mut Index) -> Result<(), String> {
+        // Persist the work before removing credentials so a partial deletion can be retried.
+        self.save(index)?;
+        for id in index.pending_expiry_removals.iter().chain(&index.pending_free_plan_removals) {
+            remove_account_home(&self.home(id)?)?;
+        }
+        let mut removed = std::mem::take(&mut index.pending_expiry_removals);
+        removed.append(&mut index.pending_free_plan_removals);
+        index.profiles.retain(|profile| !removed.contains(&profile.id));
+        self.save(index)
     }
 
     fn unique_name(
@@ -682,6 +703,7 @@ impl Repository {
         // Remove from the index first. Deleting a profile never logs out the CLI.
         index.profiles.retain(|p| p.id != id);
         index.pending_expiry_removals.retain(|pending| pending != id);
+        index.pending_free_plan_removals.retain(|pending| pending != id);
         self.save(&index)?;
         let home = self.home(id)?;
         if home.exists() {
@@ -696,7 +718,7 @@ impl Repository {
             return Err(error);
         }
         let mut index = self.index()?;
-        if index.pending_expiry_removals.iter().any(|pending| pending == id) {
+        if index.is_pending_removal(id) {
             return Err("Profile no longer exists.".into());
         }
         let profile = index
@@ -814,35 +836,28 @@ pub fn list() -> Result<ProfilesState, String> {
     with_repository(Repository::state)
 }
 
-/// Payment checks belong to the panel refresh, never to switching or cleanup.
-/// Capture credentials under the profile lock, then release it before network I/O.
+/// Check payment and plan evidence without holding the profile lock during network I/O.
 pub(crate) fn list_with_billing(refresh: bool) -> Result<ProfilesState, String> {
     if refresh { refresh_names()?; }
-    let (mut state, sources) = with_repository(|repo| {
+    let sources = with_repository(|repo| {
         let state = repo.state()?;
         let sources = state.profiles.iter().filter(|profile| profile.connected).filter_map(|profile| {
             read_login(&repo.home(&profile.id).ok()?.join("auth.json")).ok().flatten()
-                .map(|login| (profile.id.clone(), login.raw))
+                .map(|login| login.raw)
         }).collect::<Vec<_>>();
-        Ok((state, sources))
+        Ok(sources)
     })?;
     for batch in sources.chunks(4) {
-        let snapshots = std::thread::scope(|scope| {
-            let jobs = batch.iter().map(|(id, raw)| scope.spawn(move ||
-                (id, crate::subscription_billing::chatgpt(raw, refresh)))).collect::<Vec<_>>();
-            jobs.into_iter().filter_map(|job| job.join().ok()).collect::<Vec<_>>()
-        });
-        for (id, snapshot) in snapshots {
-            if let Some(subscription) = state.profiles.iter_mut().find(|profile| &profile.id == id)
-                .and_then(|profile| profile.subscription.as_mut()) {
-                if let Some(snapshot) = snapshot {
-                    subscription.billing = Some(snapshot.billing);
-                    if snapshot.active_until.is_some() { subscription.expires_at = snapshot.active_until; }
+        std::thread::scope(|scope| {
+            for raw in batch {
+                scope.spawn(move || { subscription_billing::chatgpt(raw, refresh); });
+                if refresh || !subscription_billing::live_plan_is_fresh(raw) {
+                    scope.spawn(move || crate::quota::refresh_codex_plan(raw));
                 }
             }
-        }
+        });
     }
-    Ok(state)
+    with_repository(Repository::panel_state)
 }
 
 pub(crate) fn purge_expired() -> Result<(Vec<String>, bool), String> {
@@ -944,7 +959,7 @@ impl Repository {
 
     fn profile_login_for_quota(&self, id: &str) -> Result<Login, String> {
         let index = self.index()?;
-        if index.pending_expiry_removals.iter().any(|pending| pending == id) {
+        if index.is_pending_removal(id) {
             return Err("Profile no longer exists.".into());
         }
         let profile = index.profiles.iter().find(|p| p.id == id).ok_or("Profile no longer exists.")?;
@@ -962,7 +977,7 @@ impl Repository {
         fetch: impl Fn(&Value) -> Option<crate::quota::QuotaSet>,
     ) -> Option<crate::quota::QuotaSet> {
         let index = self.index().ok()?;
-        if index.pending_expiry_removals.iter().any(|pending| pending == id) {
+        if index.is_pending_removal(id) {
             return None;
         }
         let profile = index.profiles.iter().find(|p| p.id == id)?;
@@ -1107,6 +1122,49 @@ mod tests {
         assert_eq!(fresh.profiles[0].name, "Personal");
         assert_eq!(f.repository.current().unwrap().unwrap().raw["tokens"]["access_token"], "revoked-session");
         assert_eq!(read_login(&f.repository.home(&id).unwrap().join("auth.json")).unwrap().unwrap().raw["tokens"]["access_token"], "fresh-session");
+    }
+
+    #[test]
+    fn free_reconnect_removes_only_the_verified_profile_and_leaves_ambient_login() {
+        let f = Fixture::new();
+        let repo = &f.repository;
+        f.current("downgraded", "saved-session");
+        let id = repo.create("Downgraded", true).unwrap().profiles[0].id.clone();
+        let other = repo.create("Other", false).unwrap().profiles[1].id.clone();
+        let source = f.dir.join("reconnect.json");
+        write_private(&source, &login("downgraded", "different-workspace", "wrong-session")).unwrap();
+        let error = repo.forget_free_reconnect(&id, &source, &mut |_, _| panic!("Unrelated login must not clear reset data")).unwrap_err();
+        assert!(error.contains("different ChatGPT account"));
+        assert!(repo.home(&id).unwrap().join("auth.json").exists());
+
+        write_private(&source, &login("downgraded", "workspace", "verified-session")).unwrap();
+        let remaining = repo.forget_free_reconnect(&id, &source, &mut |removed, identity| {
+            assert_eq!(removed, id);
+            assert_eq!(identity, None, "The ambient Codex login still uses this identity");
+            Ok(())
+        }).unwrap();
+        assert_eq!(remaining, vec![other.clone()]);
+        assert!(!repo.home(&id).unwrap().exists());
+        assert!(repo.home(&other).unwrap().exists());
+        assert_eq!(repo.state().unwrap().profiles[0].id, other);
+        assert_eq!(repo.current().unwrap().unwrap().raw["tokens"]["access_token"], "saved-session");
+    }
+
+    #[test]
+    fn interrupted_free_plan_removal_retries_even_with_a_saved_plus_claim() {
+        let f = Fixture::new();
+        let repo = &f.repository;
+        f.current("downgraded", "saved-session");
+        let id = repo.create("Downgraded", true).unwrap().profiles[0].id.clone();
+        let mut index = repo.index().unwrap();
+        index.pending_free_plan_removals.push(id.clone());
+        repo.save(&index).unwrap();
+
+        assert!(repo.state().unwrap().profiles.is_empty());
+        assert_eq!(repo.purge_expired(None, |_, _| panic!("The reset ledger was already cleared")).unwrap(), (vec![], true));
+        assert!(!repo.home(&id).unwrap().exists());
+        assert!(repo.index().unwrap().profiles.is_empty());
+        assert!(repo.index().unwrap().pending_free_plan_removals.is_empty());
     }
 
     #[test]
@@ -1417,6 +1475,33 @@ mod tests {
             (vec![first, remaining], true));
         assert!(home.join("auth.json").is_file());
         assert!(repo.index().unwrap().pending_expiry_removals.is_empty());
+    }
+
+    #[test]
+    fn live_free_plan_hides_a_saved_plus_profile_and_paid_access_restores_it() {
+        let f = Fixture::new();
+        let repo = &f.repository;
+        let id = repo.create("Downgraded account", false).unwrap().profiles.remove(0).id;
+        let other = repo.create("Other account", false).unwrap().profiles.remove(1).id;
+        let auth = login("downgrade-fixture", "workspace", "downgrade-token");
+        let path = repo.home(&id).unwrap().join("auth.json");
+        write_private(&path, &auth).unwrap();
+        let other_auth = login("downgrade-fixture", "other-workspace", "other-workspace-token");
+        write_private(&repo.home(&other).unwrap().join("auth.json"), &other_auth).unwrap();
+        assert_eq!(repo.panel_state().unwrap().profiles.len(), 2);
+
+        let start = std::time::Instant::now();
+        crate::quota::codex_quota_from_payload(&auth, start, &json!({"plan_type":"free"}));
+        let visible = repo.panel_state().unwrap().profiles;
+        assert_eq!(visible.iter().map(|p| &p.id).collect::<Vec<_>>(), vec![&other]);
+        assert_eq!(read_login(&path).unwrap().unwrap().raw, auth);
+        assert_eq!(repo.state().unwrap().profiles.len(), 2);
+
+        crate::quota::codex_quota_from_payload(&auth, std::time::Instant::now(), &json!({"plan_type":"unknown"}));
+        assert_eq!(repo.panel_state().unwrap().profiles.len(), 1);
+        crate::quota::codex_quota_from_payload(&auth, std::time::Instant::now(), &json!({"plan_type":"plus"}));
+        crate::quota::codex_quota_from_payload(&auth, start, &json!({"plan_type":"free"}));
+        assert_eq!(repo.panel_state().unwrap().profiles.len(), 2);
     }
 
     #[test]
@@ -2029,6 +2114,12 @@ pub(crate) fn device_profile_name(id: &str) -> Option<String> {
 }
 
 pub(crate) fn inspect_staged(home: &Path) -> Result<(String, Option<String>, crate::subscriptions::Subscription), String> {
+    let verified = inspect_staged_plan(home)?;
+    if !verified.2.is_paid() { return Err("A confirmed paid ChatGPT plan is required. Check your subscription and retry.".into()); }
+    Ok(verified)
+}
+
+fn inspect_staged_plan(home: &Path) -> Result<(String, Option<String>, crate::subscriptions::Subscription), String> {
     let server = crate::codex_refresh::account(home)?;
     let login = read_login(&home.join("auth.json"))?.ok_or("Sign-in did not save an auth.json file.")?;
     if server["email"].as_str().zip(login.email.as_deref()).is_some_and(|(a,b)| a != b) {
@@ -2036,8 +2127,15 @@ pub(crate) fn inspect_staged(home: &Path) -> Result<(String, Option<String>, cra
     }
     let mut subscription = login.subscription;
     subscription.plan = server["planType"].as_str().map(str::to_owned);
-    if !subscription.is_paid() { return Err("A confirmed paid ChatGPT plan is required. Check your subscription and retry.".into()); }
     Ok((format!("{}:{}", login.identity.subject, login.identity.account), login.email, subscription))
+}
+
+pub(crate) fn inspect_reconnect(home: &Path) -> Result<(String, Option<String>, crate::subscriptions::Subscription), String> {
+    let verified = inspect_staged_plan(home)?;
+    if !verified.2.is_paid() && !verified.2.plan.as_deref().is_some_and(crate::subscriptions::is_chatgpt_free_plan) {
+        return Err("Couldn’t confirm this account’s ChatGPT plan. Try reconnecting again.".into());
+    }
+    Ok(verified)
 }
 
 /// Compare a verified draft identity to the current Codex login without changing it.
@@ -2143,16 +2241,53 @@ pub(crate) fn reconnect_file(id: &str, source: &Path) -> Result<ProfilesState, S
     crate::profile_login::ensure_not_running(id)?;
     with_repository(|repo| repo.reconnect_file(id, source))
 }
+
+/// Forget only the profile matched by the provider-verified reconnect draft.
+pub(crate) fn forget_free_reconnect(id: &str, source: &Path) -> Result<Vec<String>, String> {
+    let (remaining, _) = crate::profile_login::with_expiry_cleanup(|signing_in| {
+        if signing_in == Some(id) { return Err("Finish or cancel this profile's sign-in first.".into()); }
+        crate::banked_resets::with_account_cleanup(|forget| {
+            with_repository(|repo| repo.forget_free_reconnect(id, source, forget).map(|ids| (ids, true)))
+        })
+    })?;
+    Ok(remaining)
+}
+
 impl Repository {
     fn reconnect_file(&self, id: &str, source: &Path) -> Result<ProfilesState, String> {
         let index = self.index()?;
+        let (profile, fresh) = self.match_reconnect(&index, id, source)?;
+        self.import_login(&profile.name, fresh, Some(id))
+    }
+
+    fn match_reconnect<'a>(&self, index: &'a Index, id: &str, source: &Path) -> Result<(&'a Profile, Login), String> {
+        if index.is_pending_removal(id) { return Err("This saved account is being removed.".into()); }
         let profile = index.profiles.iter().find(|p| p.id == id).ok_or("This saved account no longer exists.")?;
         let saved = self.login(profile)?.ok_or("Cannot verify this saved account’s identity.")?;
         let fresh = parse_login(read_imported_auth(source)?)?;
         if saved.identity != fresh.identity {
             return Err("This login belongs to a different ChatGPT account. Sign in to the account shown above.".into());
         }
-        self.import_login(&profile.name, fresh, Some(id))
+        Ok((profile, fresh))
+    }
+
+    fn forget_free_reconnect(
+        &self,
+        id: &str,
+        source: &Path,
+        forget_resets: &mut dyn FnMut(&str, Option<&str>) -> Result<(), String>,
+    ) -> Result<Vec<String>, String> {
+        let mut index = self.index()?;
+        let (_, fresh) = self.match_reconnect(&index, id, source)?;
+        let same_identity = |login: Login| login.identity == fresh.identity;
+        let other_login = self.current().ok().flatten().is_some_and(same_identity)
+            || index.profiles.iter().filter(|profile| profile.id != id)
+                .any(|profile| self.login(profile).ok().flatten().is_some_and(same_identity));
+        let reset_identity = if other_login { None } else { Some(fresh.identity.reset_key()?) };
+        forget_resets(id, reset_identity.as_deref())?;
+        index.pending_free_plan_removals.push(id.to_owned());
+        self.finish_pending_removals(&mut index)?;
+        Ok(index.profiles.into_iter().map(|profile| profile.id).collect())
     }
 }
 

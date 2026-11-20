@@ -1,19 +1,18 @@
 import { BackIcon, RefreshIcon } from "../icons";
 import { ErrorToast } from "./Toast";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { reconnectSetupAccount, prettyError } from "../api";
-import type { CodexProfile, CodexProfilesState } from "../types";
+import { reconnectSetupAccount, prettyError, type ReconnectResult } from "../api";
+import type { CodexProfile } from "../types";
 import { AppModal } from "./AppModal";
 import { Button } from "./ui/button";
 import { AccountEnrollment, useAccountEnrollment } from "./AccountEnrollment";
 
-/** Reuse enrollment methods, saving verified credentials only to this account. */
-export function ReconnectAccount({ open = true, onExited, profile, onClose, onProfilesChanged, onReconnected }: {
+/** Reuse enrollment methods with a draft bound to the saved account. */
+export function ReconnectAccount({ open = true, onExited, profile, onClose, onCompleted }: {
   open?: boolean; onExited?: () => void;
-  profile: CodexProfile; onClose: () => void; onProfilesChanged: (profiles: CodexProfilesState) => void;
-  onReconnected: () => void;
+  profile: CodexProfile; onClose: () => void; onCompleted: (result: ReconnectResult) => void;
 }) {
-  const draft = useAccountEnrollment(true);
+  const draft = useAccountEnrollment(profile.id);
   const [saving, setSaving] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const account = draft.accounts[0];
@@ -24,11 +23,10 @@ export function ReconnectAccount({ open = true, onExited, profile, onClose, onPr
     savingNow.current = true; attempted.current = account.id;
     setSaving(true); draft.setError(null);
     try {
-      const fresh = await reconnectSetupAccount(await draft.getSession(), account.id, profile.id);
-      onProfilesChanged(fresh); onReconnected();
+      onCompleted(await reconnectSetupAccount(await draft.getSession(), account.id, profile.id));
     } catch (error) { draft.setError(prettyError(error)); }
     finally { savingNow.current = false; setSaving(false); }
-  }, [account, draft.getSession, draft.setError, profile.id, onProfilesChanged, onReconnected]);
+  }, [account, draft.getSession, draft.setError, profile.id, onCompleted]);
   useEffect(() => {
     if (open && account && attempted.current !== account.id) void save();
   }, [open, account, save]);

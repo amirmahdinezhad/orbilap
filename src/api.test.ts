@@ -62,6 +62,7 @@ describe("api invoke wrappers", () => {
       [deleteWorkspace("studio"), "delete_workspace", { id: "studio" }],
       [getState(), "get_state", undefined],
       [beginAccountSetup(), "begin_account_setup", undefined],
+      [beginAccountSetup("profile-id"), "begin_account_setup", {reconnectProfileId:"profile-id"}],
       [discardAccountSetup("draft"), "discard_account_setup", {sessionId:"draft"}],
       [loadSetupAccounts("draft"), "load_setup_accounts", {sessionId:"draft", provider:undefined}],
       [loadSetupAccounts("draft", "codex"), "load_setup_accounts", {sessionId:"draft", provider:"codex"}],

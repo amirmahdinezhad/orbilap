@@ -260,13 +260,28 @@ fn prune_account_references(app: &mut AppSettings, provider: &str, ids: &[String
 
 /// Only IDs with a persisted reference need to be checked for orphaned shared settings.
 fn prune_shared_account_references(app: &mut AppSettings, known_ids: &[String]) {
-    app.multi_profile.selected_ids.retain(|id| known_ids.contains(id));
+    retain_shared_account_references(app, |id| known_ids.iter().any(|known| known == id));
+}
+
+fn retain_shared_account_references(app: &mut AppSettings, keep: impl Fn(&str) -> bool) {
+    app.multi_profile.selected_ids.retain(|id| keep(id));
     for workspace in &mut app.workspaces {
-        workspace.usage.account_windows.retain(|id, _| known_ids.contains(id));
-        if workspace.usage.menu_bar_account_id.as_ref().is_some_and(|id| !known_ids.contains(id)) {
+        workspace.usage.account_windows.retain(|id, _| keep(id));
+        if workspace.usage.menu_bar_account_id.as_deref().is_some_and(|id| !keep(id)) {
             workspace.usage.menu_bar_account_id = None;
         }
     }
+}
+
+pub(crate) fn forget_free_reconnect(id: &str, source: &std::path::Path) -> Result<settings::AppSettings, String> {
+    let (saved, ()) = settings::update_settings_if_changed(&paths::settings_file(), |app| {
+        let remaining = profiles::forget_free_reconnect(id, source)?;
+        prune_account_references(app, "codex", &remaining);
+        retain_shared_account_references(app, |saved_id| saved_id != id);
+        app.project_workspace_preferences();
+        Ok(())
+    })?;
+    Ok(saved)
 }
 
 /// Import and assign under the settings lock. Validation never activates the account.

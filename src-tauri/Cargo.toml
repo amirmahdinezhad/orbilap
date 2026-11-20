@@ -1,6 +1,6 @@
 [package]
 name = "orbilap"
-version = "1.0.2"
+version = "1.0.3"
 description = "Switch AI accounts in seconds and see usage at a glance."
 authors = ["Amir Mahdi Nezhad"]
 edition = "2021"

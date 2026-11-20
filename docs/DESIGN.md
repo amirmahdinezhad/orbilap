@@ -798,23 +798,18 @@ name, show its first two letters (or its only letter), skipping punctuation and
 emoji. Keep the same rule in account cards, menu-bar settings preview and the
 native menu bar. Workspace and provider marks keep their own identity rules.
 
-Saved Codex accounts with missing credentials or rejected/expired sessions use a
-static amber inset edge, a key icon with Reconnect needed,
-a short recovery note and the shared iris Reconnect action. Keep the monogram
-in its standard account style without amber tint. Keep the
-identity fully readable. Suppress Active styling, Switch, usage meters and reset
-credits until the account is reconnected. Transient network failures keep their
-ordinary usage error and do not receive this connection state. Clear the warning
-as soon as connected metadata and successful usage return. The card itself has
-no hover, pulsing or entrance motion; reuse existing button feedback.
+Saved Codex accounts with missing credentials or rejected sessions use the
+standard home card and monogram. Below the identity, a neutral divider separates
+a compact footer with an amber key icon, Reconnect needed, and a short recovery
+note. Align the shared small secondary Reconnect button to the right. Keep the
+status and note able to wrap at tray width. The button uses the shared focus,
+disabled, pointer and reduced-motion states. The warning itself is static.
+Suppress Active styling, Switch, usage meters and reset credits until the
+account is reconnected. Transient network failures retain their ordinary usage
+error. Clear the recovery footer when connected metadata and usage return.
 
-Reconnect shares Switch’s static iris inset fill and edge, 120-degree
-hover layer fading over 300ms with ease, and 100ms press at scale .97. Keep
-keyboard feedback immediate and use only a 100ms opacity fade in reduced motion.
-Both actions use the same CSS rules; Reconnect paints its full 36px target.
-
-Account recovery uses a compact iris-tinted Reconnect button with a static
-refresh icon. Open the shared Codex sign-in method chooser directly, with browser,
+The Reconnect button uses the shared refresh icon. Open the shared Codex
+sign-in method chooser directly, with browser,
 device-code and auth.json options. Keep the saved account identity visible and
 automatically save after verification; reject a different account identity.
 After a successful save, dismiss the sheet, show a toast naming the reconnected
@@ -822,6 +817,11 @@ account and reveal its refreshed home card. Wait for both dialog exit and quota
 placeholders to finish before centering/focusing the card. Use smooth scrolling
 for orientation and an instant scroll in reduced motion. Keep failed saves in
 the sheet with explicit retry and method-selection actions.
+If reconnect verifies a Free plan for the saved account, remove its local
+profile and workspace references. Close the sheet, move focus to a remaining
+home control and show a shared toast naming the account and the reason.
+Plan verification failures keep the sheet open for retry. Reuse the existing
+sheet, list and toast transitions.
 Reuse enrollment rows, dialog presence and shared pointer/reduced-motion feedback.
 
 At the owner's request, Tab and Shift+Tab do nothing throughout the app,

@@ -37,7 +37,7 @@ impl Subscription {
         if matches!(plan.as_str(), "free" | "trial" | "free_tier") { return false; }
         if let Some(price) = self.monthly_price_usd { return price.is_finite() && price > 0.0; }
         match self.id.as_str() {
-            "chatgpt" => matches!(plan.as_str(), "go" | "plus" | "pro" | "prolite" | "pro_lite" | "pro_100" | "pro_200" | "pro_500" | "team" | "business" | "enterprise" | "edu"),
+            "chatgpt" => is_chatgpt_paid_plan(&plan),
             "claude" => matches!(plan.as_str(), "pro" | "max" | "max_5x" | "max_20x" | "team" | "enterprise"),
             "antigravity" => self.status.as_deref() == Some("active"),
             "opencode-go" => self.status.as_deref() == Some("active"),
@@ -50,6 +50,14 @@ impl Subscription {
     pub fn is_expired(&self) -> bool {
         self.status.as_deref() == Some("expired")
     }
+}
+
+pub(crate) fn is_chatgpt_paid_plan(plan: &str) -> bool {
+    matches!(plan, "go" | "plus" | "pro" | "prolite" | "pro_lite" | "pro_100" | "pro_200" | "pro_500" | "team" | "business" | "enterprise" | "edu")
+}
+
+pub(crate) fn is_chatgpt_free_plan(plan: &str) -> bool {
+    matches!(plan.trim().to_ascii_lowercase().as_str(), "free" | "free_tier")
 }
 
 /// ChatGPT's billing claims are distinct from the JWT/session lifetime.

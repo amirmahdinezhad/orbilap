@@ -1082,7 +1082,7 @@ describe("settings and refresh", () => {
       : { provider: "codex", windows: [{ window: "5-hour", percent: 20 }] });
     api.reconnectSetupAccount.mockImplementation(async () => {
       api.codexProfileQuota.mockResolvedValue({ provider: "codex", windows: [{ window: "Weekly", percent: 12 }] });
-      return { profiles: [personal, { ...work, needsActivation: true }], activeProfileId: personal.id, canImport: true, switchError: null };
+      return { removed: false, profiles: { profiles: [personal, { ...work, needsActivation: true }], activeProfileId: personal.id, canImport: true, switchError: null } };
     });
     render(<App />);
     expect(await screen.findByText("Reconnect needed")).toBeInTheDocument();
@@ -1109,7 +1109,7 @@ describe("settings and refresh", () => {
     const refreshedUsage = new Promise<{ provider: string; windows: { window: string; percent: number }[] }>(resolve => { finishUsage = resolve; });
     api.reconnectSetupAccount.mockImplementation(async () => {
       api.codexProfileQuota.mockImplementation(() => refreshedUsage);
-      return { profiles: [personal, { ...work, needsActivation: true }], activeProfileId: personal.id, canImport: true, switchError: null };
+      return { removed: false, profiles: { profiles: [personal, { ...work, needsActivation: true }], activeProfileId: personal.id, canImport: true, switchError: null } };
     });
     try {
       render(<App />);
@@ -1127,6 +1127,29 @@ describe("settings and refresh", () => {
       expect(scroll.mock.calls[index]).toEqual([{ block: "center", behavior: reducedMotion ? "instant" : "smooth" }]);
       expect(api.activateCodexProfile).not.toHaveBeenCalled();
     } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("closes reconnect and removes the saved card when native verification confirms a Free plan", async () => {
+    const user = userEvent.setup();
+    api.codexProfileQuota.mockImplementation(async (id) => id === work.id
+      ? { provider: "codex", error: "session rejected" }
+      : { provider: "codex", windows: [{ window: "Weekly", percent: 10 }] });
+    api.pollSetupLogin.mockResolvedValue({ attemptId: "attempt", status: "completed",
+      account: { ...stagedCodex, alreadyAdded: true, subscription: { id: "chatgpt", service: "ChatGPT", plan: "free" } }, error: null });
+    api.reconnectSetupAccount.mockImplementation(async () => {
+      api.getState.mockResolvedValue(savedState([{ ...studio, accountIds: [personal.id] }]));
+      return { removed: true, profiles: { profiles: [personal], activeProfileId: personal.id, canImport: true, switchError: null } };
+    });
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Reconnect" }));
+    await user.click(screen.getByRole("button", { name: "Sign in with ChatGPT" }));
+    expect(api.beginAccountSetup).toHaveBeenCalledWith(work.id);
+    expect(await screen.findByText("Work account was removed because its ChatGPT plan is Free.")).toBeVisible();
+    expect(api.reconnectSetupAccount).toHaveBeenCalledExactlyOnceWith("draft", stagedCodex.id, work.id);
+    expect(screen.queryByRole("dialog", { name: "Reconnect account" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Work account account" })).not.toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Personal account account" })).toBeVisible();
+    expect(api.activateCodexProfile).not.toHaveBeenCalled();
   });
 
   it.each(["Sign in with ChatGPT", "Use a device code"])("reconnects with %s and allows retry after an identity mismatch", async (method) => {

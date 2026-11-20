@@ -1,5 +1,5 @@
-//! ChatGPT payment status is independent from JWT plan dates and usable limits.
-//! Only the account's read-only subscription GET supplies payment/grace evidence.
+//! The subscription endpoint supplies payment evidence. The Codex usage
+//! endpoint independently supplies the account's current plan.
 use crate::{codex, subscriptions::SubscriptionBilling};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -76,6 +76,14 @@ impl BillingCache {
 
 static CACHE: LazyLock<BillingCache> = LazyLock::new(BillingCache::default);
 
+struct LivePlan {
+    started: Instant,
+    token_hash: [u8; 32],
+    free: bool,
+}
+
+static LIVE_PLANS: LazyLock<Mutex<HashMap<[u8; 32], LivePlan>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
 fn identity(raw: &Value) -> Option<[u8; 32]> {
     let claims = raw["tokens"]["id_token"].as_str().and_then(codex::jwt_payload)?;
     let subject = claims["sub"].as_str().filter(|subject| !subject.is_empty())?;
@@ -83,6 +91,41 @@ fn identity(raw: &Value) -> Option<[u8; 32]> {
         .or_else(|| claims["https://api.openai.com/auth"]["chatgpt_account_id"].as_str())
         .filter(|account| !account.is_empty())?;
     Some(Sha256::digest(serde_json::to_vec(&(subject, account)).ok()?).into())
+}
+
+fn access_token_hash(raw: &Value) -> Option<[u8; 32]> {
+    let token = raw["tokens"]["access_token"].as_str().filter(|token| !token.is_empty())?;
+    Some(Sha256::digest(token.as_bytes()).into())
+}
+
+pub(crate) fn live_plan_is_free(raw: &Value) -> bool {
+    identity(raw).is_some_and(|key| {
+        LIVE_PLANS.lock().is_ok_and(|plans| plans.get(&key).is_some_and(|plan| plan.free))
+    })
+}
+
+pub(crate) fn live_plan_is_fresh(raw: &Value) -> bool {
+    identity(raw).zip(access_token_hash(raw)).is_some_and(|(key, token_hash)| {
+        LIVE_PLANS.lock().is_ok_and(|plans| plans.get(&key).is_some_and(|plan| {
+            plan.token_hash == token_hash && plan.started.elapsed() < Duration::from_secs(60)
+        }))
+    })
+}
+
+/// Only a successful, account-scoped usage response can change visibility.
+pub(crate) fn observe_usage_plan(raw: &Value, started: Instant, payload: &Value) {
+    let Some(plan) = payload["plan_type"].as_str() else { return; };
+    let free = plan == "free";
+    if !free && !crate::subscriptions::is_chatgpt_paid_plan(plan) { return; }
+    let Some((key, token_hash)) = identity(raw).zip(access_token_hash(raw)) else { return; };
+    let Ok(mut plans) = LIVE_PLANS.lock() else { return; };
+    if plans.get(&key).is_some_and(|previous| previous.started > started) { return; }
+    if plans.len() >= 256 && !plans.contains_key(&key) {
+        if let Some(oldest) = plans.iter().min_by_key(|(_, plan)| plan.started).map(|(key, _)| *key) {
+            plans.remove(&oldest);
+        }
+    }
+    plans.insert(key, LivePlan { started, token_hash, free });
 }
 
 /// Existing payment evidence survives rename/switch responses without network I/O.

@@ -24,7 +24,7 @@ export function accountSourceLabel({ provider, source }: SetupAccount): string |
 }
 
 /** One native staging session is shared by discovery and all new-account methods. */
-export function useAccountEnrollment(allowExisting = false) {
+export function useAccountEnrollment(reconnectProfileId?: string) {
   const session = useRef<Promise<string> | null>(null);
   const mounted = useRef(false);
   const [accounts, setAccounts] = useState<SetupAccount[]>([]);
@@ -47,9 +47,10 @@ export function useAccountEnrollment(allowExisting = false) {
   const startingLogin = useRef(false);
   const onLoginAccount = useRef<((account: SetupAccount) => void) | undefined>(undefined);
   const getSession = useCallback(() => {
-    if (!session.current) session.current = beginAccountSetup().catch((error) => { session.current = null; throw error; });
+    if (!session.current) session.current = (reconnectProfileId ? beginAccountSetup(reconnectProfileId) : beginAccountSetup())
+      .catch((error) => { session.current = null; throw error; });
     return session.current;
-  }, []);
+  }, [reconnectProfileId]);
   const openSignIn = useCallback(async () => {
     if (!login?.authUrl || login.status !== "pending" || openingAttempt.current) return;
     const attemptId = login.attemptId;
@@ -80,12 +81,12 @@ export function useAccountEnrollment(allowExisting = false) {
     };
   }, []);
   const add = useCallback((account: SetupAccount) => {
-    if (account.alreadyAdded && !allowExisting) { setError("This account is already added to Orbilap."); return; }
+    if (account.alreadyAdded && !reconnectProfileId) { setError("This account is already added to Orbilap."); return; }
     setAccounts((previous) => [...previous.filter((old) => old.id !== account.id), account]);
     setSelected((previous) => [...new Set([...previous, account.id])]);
     setManualIds((previous) => [...new Set([...previous, account.id])]);
     setEditing(false); setRevision((value) => value + 1);
-  }, [allowExisting]);
+  }, [reconnectProfileId]);
   useEffect(() => {
     if (!login || login.status !== "pending") return;
     let active = true;

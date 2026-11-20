@@ -308,7 +308,8 @@ export type AccountSource = "desktop" | "cli" | "saved";
 export interface SetupAccount { id: string; provider: AccountProvider; name: string; displayName?: string | null; active?: boolean; alreadyAdded?: boolean; email: string | null; subscription: Subscription; source?: AccountSource }
 export interface SetupLogin { attemptId: string; status: "pending" | "completed" | "failed"; authUrl: string | null; userCode: string | null; error: string | null; account: SetupAccount | null }
 /** Setup credentials live only in native private drafts until one explicit commit. */
-export const beginAccountSetup = (): Promise<string> => invoke("begin_account_setup");
+export const beginAccountSetup = (reconnectProfileId?: string): Promise<string> =>
+  reconnectProfileId ? invoke("begin_account_setup", { reconnectProfileId }) : invoke("begin_account_setup");
 export const discardAccountSetup = (sessionId: string): Promise<void> => invoke("discard_account_setup", { sessionId });
 /** Automatically verify local accounts. A provider filter omits saved profiles. */
 export const loadSetupAccounts = (sessionId: string, provider?: AccountProvider): Promise<SetupAccount[]> =>
@@ -333,7 +334,8 @@ export const connectCurrentGoogle = (sessionId: string, name: string): Promise<S
 export const renameAntigravityAccount = (id: string, name: string): Promise<void> => invoke("rename_antigravity_account", { id, name });
 
 /** Replace only the matching saved identity from a native verified draft. */
-export const reconnectSetupAccount = (sessionId: string, accountId: string, profileId: string): Promise<CodexProfilesState> => invoke("reconnect_setup_account", { sessionId, accountId, profileId });
+export interface ReconnectResult { profiles: CodexProfilesState; removed: boolean }
+export const reconnectSetupAccount = (sessionId: string, accountId: string, profileId: string): Promise<ReconnectResult> => invoke("reconnect_setup_account", { sessionId, accountId, profileId });
 
 /** Activate a verified member in the shared Antigravity login store. */
 export const activateAntigravityAccount = (workspaceId: string, id: string): Promise<{ state: AppState; launchWarning: string | null }> => invoke("activate_antigravity_account", { workspaceId, id });
