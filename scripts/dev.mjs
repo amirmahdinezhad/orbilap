@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -19,17 +20,36 @@ function startIndependent(worker = "--worker") {
     console.log(`Orbilap dev is already running (supervisor ${job()}).`);
     return;
   }
-  // A failed/exited submit job keeps its label until explicitly removed.
+  // launchd retains the label after a worker exits.
   spawnSync("/bin/launchctl", ["remove", label], { stdio: "ignore" });
-  const env = ["PATH=" + process.env.PATH];
+  const environment = { PATH: process.env.PATH };
   for (const key of ["CODEX_HOME", "ORBILAP_OPENCODE_USERDATA", "ORBILAP_PREVIEW_CLAUDE", "VITE_ORBILAP_PREVIEW_UPDATE"]) {
-    if (process.env[key]) env.push(`${key}=${process.env[key]}`);
+    if (process.env[key]) environment[key] = process.env[key];
   }
-  const result = spawnSync("/bin/launchctl", [
-    "submit", "-l", label, "-o", supervisorLog, "-e", supervisorLog,
-    "--", "/usr/bin/env", ...env, process.execPath, fileURLToPath(import.meta.url), worker,
-  ], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`Cannot start independent dev: ${result.stderr.trim()}`);
+  // launchctl submit implies KeepAlive, which relaunches dev even after Quit.
+  const config = {
+    Label: label,
+    ProgramArguments: [process.execPath, fileURLToPath(import.meta.url), worker],
+    EnvironmentVariables: environment,
+    RunAtLoad: true,
+    KeepAlive: false,
+    StandardOutPath: supervisorLog,
+    StandardErrorPath: supervisorLog,
+  };
+  const directory = mkdtempSync(path.join(tmpdir(), "orbilap-dev-"));
+  try {
+    const plist = path.join(directory, `${label}.plist`);
+    const write = spawnSync("/usr/bin/plutil", ["-convert", "xml1", "-o", plist, "--", "-"], {
+      input: JSON.stringify(config), encoding: "utf8",
+    });
+    if (write.error) throw write.error;
+    if (write.status !== 0) throw new Error(`Cannot create independent dev job: ${write.stderr.trim() || write.stdout.trim()}`);
+    const start = spawnSync("/bin/launchctl", ["bootstrap", `gui/${process.getuid()}`, plist], { encoding: "utf8" });
+    if (start.error) throw start.error;
+    if (start.status !== 0) throw new Error(`Cannot start independent dev: ${start.stderr.trim()}`);
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
   console.log(`Orbilap dev started independently of Codex on http://localhost:5174/. Logs: ${supervisorLog}`);
 }
 

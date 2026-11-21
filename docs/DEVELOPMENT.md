@@ -29,7 +29,8 @@ Run `pnpm run dev:restart` to return to the regular workspace.
 On macOS, `pnpm run run` starts a launchd-owned supervisor so closing Codex
 cannot also close Orbilap or Vite during an account restart. The command returns
 while dev continues. `pnpm run dev:status` checks that ownership;
-`pnpm run dev:stop` stops both services. Logs remain in
+`Quit Orbilap` in the dev panel stops the native app and Vite. To stop both
+services from the terminal, run `pnpm run dev:stop`. Logs remain in
 `/tmp/orbilap-vite-5174.log` and `/tmp/orbilap-tauri-dev.log`.
 
 If Vite is already running:

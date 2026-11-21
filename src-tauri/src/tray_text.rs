@@ -227,14 +227,19 @@ fn bar_width(count: usize) -> f64 { if count == 1 { 96.0 } else { 72.0 } }
 fn rounded_bar(rgba: &mut [u8], image_width: u32, x: f64, y: f64, width: f64, height: f64, color: Option<[u8; 3]>, alpha: u8) {
     if width <= 0.0 || height <= 0.0 { return; }
     let radius = (height / 2.0).min(width / 2.0);
+    // Local coordinates keep the bounds ordered when the radius is half the
+    // bar's size and its origin falls between pixels.
+    let right_center = width - radius;
+    let bottom_center = height - radius;
     for py in y.floor().max(0.0) as u32..(y + height).ceil().min(36.0) as u32 {
         for px in x.floor().max(0.0) as u32..(x + width).ceil().min(f64::from(image_width)) as u32 {
             let mut coverage = 0.0;
             for sy in [0.25, 0.75] { for sx in [0.25, 0.75] {
-                let fx = f64::from(px) + sx; let fy = f64::from(py) + sy;
-                if fx < x || fx > x + width || fy < y || fy > y + height { continue; }
-                let cx = fx.clamp(x + radius, x + width - radius);
-                let cy = fy.clamp(y + radius, y + height - radius);
+                let fx = f64::from(px) + sx - x;
+                let fy = f64::from(py) + sy - y;
+                if fx < 0.0 || fx > width || fy < 0.0 || fy > height { continue; }
+                let cx = fx.clamp(radius, right_center);
+                let cy = fy.clamp(radius, bottom_center);
                 if (fx - cx).powi(2) + (fy - cy).powi(2) <= radius.powi(2) { coverage += 0.25; }
             } }
             let offset = ((py * image_width + px) * 4) as usize;
@@ -261,6 +266,31 @@ pub fn render(_labels: &[Label], _monochrome: bool, _accent: [u8; 3], _style: Me
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progress_renders_a_fractionally_positioned_reset_marker() {
+        let color = [48, 184, 107];
+        let label = Label {
+            text: "5h 60%".into(),
+            provider: None,
+            show_provider: false,
+            caption: None,
+            color,
+            segments: Vec::new(),
+            metrics: vec![Metric {
+                label: None,
+                fraction: Some(0.6),
+                time_marker: Some(0.58335),
+                reset_fraction: None,
+                color,
+            }],
+        };
+
+        let image = render(&[label], false, color, MenuBarStyle::Progress, false, false)
+            .expect("progress renderer");
+        let marker_pixel = (18 * image.width() as usize + 62) * 4;
+        assert_eq!(&image.rgba()[marker_pixel..marker_pixel + 4], &[24, 26, 30, 255]);
+    }
 
     #[test]
     fn hiding_app_logo_removes_only_its_space_in_every_style_and_preserves_empty_fallback() {
@@ -336,6 +366,13 @@ mod tests {
         let alpha = |image: &Image<'_>, x| image.rgba()[((32 * image.width() + x) * 4 + 3) as usize];
         assert!(alpha(&image, 60) > 200, "the first quarter is filled");
         assert!(alpha(&image, 90) < 100, "the rest is only the track");
+
+        // At the end of a reset window, the fill can be narrower than its height.
+        let track_width = f64::from(image.width() - 52 - 12);
+        label.metrics[0].reset_fraction = Some(1.0002 / track_width);
+        let nearly_reset = render(&[label.clone()], true, color, MenuBarStyle::ResetTimeline, true, false).unwrap();
+        assert!(alpha(&nearly_reset, 58) > alpha(&nearly_reset, 60));
+
         label.segments[0].0 = "100%".into();
         label.metrics[0].reset_fraction = None;
         let untimed = render(&[label], true, color, MenuBarStyle::ResetTimeline, true, false).unwrap();
