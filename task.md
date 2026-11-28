@@ -1,9 +1,10 @@
 # Orbilap 1.1.0 release preparation
 
-2026-11-28 · Review; exact-version publication approval pending.
+2026-11-28 · Publication approved; final packaging and verification in progress.
 
 Owner requested pushing all accumulated changes and publishing a new GitHub
-release. Proposed minor version 1.1.0 includes the optional floating orb,
+release, then explicitly approved 1.1.0 and its reviewed notes, accepting the
+disclosed native visual and installed-copy upgrade verification limits. Proposed minor version 1.1.0 includes the optional floating orb,
 configurable global shortcut, update indicators, provider corrections and
 Display settings refinements. Manifests synchronized; English notes and security
 review are in docs/releases/1.1.0.md and 1.1.0.security.md.
