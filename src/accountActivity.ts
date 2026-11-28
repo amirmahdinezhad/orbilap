@@ -10,6 +10,6 @@ export function activeAccountFirst<T extends { id: string }>(accounts: T[], acti
 
 /** A saved workspace default never establishes a provider login. */
 export function activeProviderAccountId(provider: AccountProvider, workspace: Workspace, accounts: readonly { id: string; active?: boolean }[]): string | null {
-  const ids = provider === "codex" ? workspace.accountIds : provider === "claude" ? workspace.claudeAccountIds : workspace.antigravityAccountIds;
+  const ids = provider === "codex" ? workspace.accountIds : provider === "claude" ? workspace.claudeAccountIds : (workspace.antigravityAccountIds ?? []);
   return accounts.find((account) => account.active && (ids == null || ids.includes(account.id)))?.id ?? null;
 }

@@ -1,6 +1,6 @@
 import { render } from "../test/notifications";
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup,  screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WorkspaceMenuBar } from "./WorkspaceMenuBar";
 import { DEFAULT_APP_SETTINGS, DEFAULT_WORKSPACE_USAGE, type ClaudeProfile, type CodexProfile, type Workspace } from "../types";
@@ -11,6 +11,35 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const account = (id: string): CodexProfile => ({ id, name: id, email: `${id}@example.com`, plan: null, connected: true, active: false, needsActivation: false, connectionError: null, loginCommand: "" });
 const googleAccount = (id: string, active = false): SetupAccount => ({ id, name: id, active, provider: "antigravity", email: `${id}@example.com`, subscription: { id, service: "antigravity" } });
 const claudeAccount = (id: string, active = false): ClaudeProfile => ({ id, name: id, active, email: null, configDir: `/tmp/${id}`, createdAt: "", connected: true, subscription: null, loginCommand: "", launchCommand: "", quota: null });
+
+it("reveals limits from the provider switch without a second action and retains saved choices", async () => {
+  const user = userEvent.setup();
+  api.codexProfileQuota.mockResolvedValue({ provider: "codex", windows: [{ window: "weekly", percent: 20 }] });
+  let workspace: Workspace = { id: "studio", name: "Studio", accent: "#007aff", accountIds: ["one"], usage: { ...DEFAULT_WORKSPACE_USAGE, menuBarProviders: [], accountWindows: { one: ["weekly"] } } };
+  const save = vi.fn(async patch => {
+    workspace = { ...workspace, usage: { ...workspace.usage, ...patch } };
+    view.rerender(<WorkspaceMenuBar {...props} workspace={workspace} />);
+  });
+  const props = { app: DEFAULT_APP_SETTINGS, accounts: [{ ...account("one"), active: true }], claudeAccounts: [], googleAccounts: [], busy: false, onSave: save };
+  const view = render(<WorkspaceMenuBar {...props} workspace={workspace} />);
+  expect(api.codexProfileQuota).not.toHaveBeenCalled();
+  const toggle = screen.getByRole("switch", { name: "Show Codex in menu bar" });
+  await user.click(toggle);
+  const weekly = await screen.findByRole("checkbox", { name: "Show one Weekly limit" });
+  expect(weekly).toBeVisible();
+  expect(weekly).toBeChecked();
+  expect(screen.queryByLabelText("Codex limits")).not.toBeInTheDocument();
+  expect(view.container.querySelector('.settings-reveal[data-open="true"]')).toBeInTheDocument();
+  view.rerender(<WorkspaceMenuBar {...props} workspace={workspace} busy />);
+  expect(weekly).toBeDisabled();
+  expect(weekly).toBeVisible();
+  view.rerender(<WorkspaceMenuBar {...props} workspace={workspace} />);
+  await user.click(toggle);
+  expect(screen.queryByRole("checkbox", { name: "Show one Weekly limit" })).not.toBeInTheDocument();
+  expect(workspace.usage.accountWindows?.one).toEqual(["weekly"]);
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(api.codexProfileQuota).toHaveBeenCalledExactlyOnceWith("one");
+});
 
 it.each(["claude", "antigravity"] as const)("shows only the live %s account without an account picker", async (provider) => {
   const read = provider === "claude" ? api.claudeProfileQuota : api.antigravityAccountQuota;
@@ -130,6 +159,7 @@ it("starts with Reset timeline first and saves the progress style without changi
   const workspace: Workspace = { id: "studio", name: "Studio", accent: "#007aff", accountIds: ["one"], claudeAccountIds: [], usage: { ...DEFAULT_WORKSPACE_USAGE, accountWindows: {} } };
   const props = { app: DEFAULT_APP_SETTINGS, accounts: [{ ...account("one"), active: true }], claudeAccounts: [], googleAccounts: [], busy: false, onSave: save };
   const view = render(<WorkspaceMenuBar {...props} workspace={workspace} />);
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   expect(screen.getAllByRole("radio")[0]).toBe(screen.getByRole("radio", { name: "Reset timeline" }));
   expect(screen.getByRole("radio", { name: "Reset timeline" })).toBeChecked();
   expect(await screen.findByRole("checkbox", { name: "Show one Weekly limit" })).toBeChecked();
@@ -195,6 +225,7 @@ it("saves the provider logo preference independently of providers and limits", a
   const workspace: Workspace = { id: "studio", name: "Studio", accent: "#007aff", accountIds: ["one"], usage: { ...DEFAULT_WORKSPACE_USAGE, showProviderLogos: false } };
   const props = { app: DEFAULT_APP_SETTINGS, accounts: [{ ...account("one"), active: true }], claudeAccounts: [], googleAccounts: [], busy: false, onSave: save };
   const view = render(<WorkspaceMenuBar {...props} workspace={workspace} />);
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   const logos = screen.getByRole("switch", { name: "Show provider logos" });
   expect(logos).not.toBeChecked();
   await user.click(logos);
@@ -209,6 +240,7 @@ it("defaults the app logo on for legacy settings and independently saves its vis
   const workspace: Workspace = { id: "studio", name: "Studio", accent: "#007aff", accountIds: ["one"], usage: { ...DEFAULT_WORKSPACE_USAGE, showAppLogo: undefined, showProviderLogos: true } };
   const props = { app: DEFAULT_APP_SETTINGS, accounts: [{ ...account("one"), active: true }], claudeAccounts: [], googleAccounts: [], busy: false, onSave: save };
   const view = render(<WorkspaceMenuBar {...props} workspace={workspace} />);
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   const toggle = screen.getByRole("switch", { name: "Show app logo" });
   expect(toggle).toBeChecked();
   expect(toggle).toHaveAccessibleDescription("Always shown when no usage is displayed.");
@@ -224,4 +256,22 @@ it("defaults the app logo on for legacy settings and independently saves its vis
   view.rerender(<WorkspaceMenuBar {...props} busy workspace={{ ...workspace, usage: { ...workspace.usage, showAppLogo: false } }} />);
   await user.click(toggle);
   expect(save).toHaveBeenCalledTimes(1);
+});
+
+
+it.each([ ["plus", "5-hour", "Weekly"], ["pro", "Weekly", "5-hour"] ])("defaults Codex %s to its preferred limit and both logos, preserving manual choices", async (plan, selected, other) => {
+  api.codexProfileQuota.mockResolvedValue({ provider: "codex", windows: [{ window: "rolling", percent: 20 }, { window: "weekly", percent: 40 }] });
+  const workspace: Workspace = { id: "studio", name: "Studio", accent: "#007aff", accountIds: ["one"], usage: { ...DEFAULT_WORKSPACE_USAGE } };
+  const props = { workspace, app: DEFAULT_APP_SETTINGS, accounts: [{ ...account("one"), active: true, plan }], claudeAccounts: [], googleAccounts: [], busy: false, onSave: vi.fn().mockResolvedValue(undefined) };
+  const view = render(<WorkspaceMenuBar {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  expect(await screen.findByRole("checkbox", { name: `Show one ${selected} limit` })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: `Show one ${other} limit` })).not.toBeChecked();
+  expect(screen.getByRole("switch", { name: "Show app logo" })).toBeChecked();
+  expect(screen.getByRole("switch", { name: "Show provider logos" })).toBeChecked();
+  view.rerender(<WorkspaceMenuBar {...props} workspace={{ ...workspace, usage: { ...workspace.usage, showAppLogo: false, showProviderLogos: false, accountWindows: { one: [other === "Weekly" ? "weekly" : "5-hour"] } } }} />);
+  expect(screen.getByRole("checkbox", { name: `Show one ${other} limit` })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: `Show one ${selected} limit` })).not.toBeChecked();
+  expect(screen.getByRole("switch", { name: "Show app logo" })).not.toBeChecked();
+  expect(screen.getByRole("switch", { name: "Show provider logos" })).not.toBeChecked();
 });

@@ -116,7 +116,7 @@
 /* Apply aliases at every existing token boundary, including body portals. */
 :root, [data-theme="light"], #root, #root:has(> .home-header),
 [data-theme="light"] #root:has(> .home-header),
-.ak-dialog, .workspace-setup, .workspace-picker-panel, .ui-select-content {
+.ak-dialog, .workspace-setup, .workspace-picker-panel, .ui-select-content, .floating-usage-card {
   --home-bg: var(--orbilap-background);
   --home-surface: var(--orbilap-card);
   --home-surface-top: var(--orbilap-surface);
@@ -377,12 +377,6 @@
 .ak-dialog button.ui-radio-option:focus-visible { outline: 2px solid var(--home-focus); outline-offset: -2px; }
 .ak-dialog button.ui-radio-option:disabled,
 [role="radiogroup"][aria-disabled="true"] button.ui-radio-option { cursor: default; }
-.ui-radio-option-mark {
-  flex: 0 0 17px; width: 17px; height: 17px; display: grid; place-items: center;
-  border: 1px solid var(--home-muted); border-radius: 50%;
-}
-.ui-radio-option[data-state="checked"] .ui-radio-option-mark { background: var(--orbilap-primary); border-color: var(--orbilap-primary); }
-.ui-radio-option-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orbilap-primary-foreground); }
 .ui-radio-option-text { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
 .ui-radio-option-description { color: var(--home-muted); font-size: 11px; line-height: 1.4; }
 @media (hover: hover) and (pointer: fine) {
@@ -418,9 +412,14 @@
   box-shadow: var(--orbilap-shadow-panel);
 }
 .ak-dialog[data-state="closed"], .ak-backdrop[data-state="closed"] { animation-duration: var(--orbilap-motion-exit); }
-:root[data-keyboard="true"] :is(.ak-dialog, .ak-backdrop, .ui-select-content, .ui-tooltip) { animation: none !important; }
+:root[data-keyboard="true"] :is(.ak-dialog, .ak-backdrop, .ui-select-content, .ui-tooltip):not([data-input="pointer"][data-state="open"]) { animation: none !important; }
 @keyframes surface-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes surface-exit { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.98); } }
+
+/* Reconnection uses the shared warning tone without changing card geometry. */
+.home-accounts .account-card.is-disconnected {
+  box-shadow: var(--orbilap-shadow-panel), inset 0 0 0 1px var(--home-warning);
+}
 
 /* Active identity keeps Orbilap's green status treatment within Orbilap geometry. */
 .home-accounts .account-card.is-active:not(.is-disconnected),
@@ -732,3 +731,9 @@
   width: 44px; height: 44px; background: var(--home-inset);
   color: var(--home-text); font-size: 15px;
 }
+
+/* Visual radio choices retain shared control geometry and keyboard states. */
+.ui-radio-option-body { display: grid; gap: 0.5rem; min-width: 0; width: 100%; }
+.ui-radio-option-preview { display: grid; justify-items: center; min-width: 0; width: 100%; }
+.ak-dialog button.ui-radio-option[data-preview="true"] { align-items: flex-start; }
+.ui-radio-option[data-preview="true"] .ui-radio-mark { margin-top: 0.125rem; }

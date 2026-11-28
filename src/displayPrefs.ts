@@ -13,7 +13,7 @@ export interface DisplayPrefs {
   compactRows: boolean;
   /** Re-read state + CLI status when the panel regains focus. */
   refreshOnFocus: boolean;
-  /** Opt-in daily update checks and downloads, including while Settings is closed. */
+  /** Check on launch and daily while running; downloads always require a click. */
   checkUpdatesOnLaunch: boolean;
   /** Panel color scheme. `system` follows the OS. */
   theme: ThemeMode;
@@ -44,7 +44,7 @@ export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
   compactRows: false,
   // Panel opens show cached data instantly; refresh is manual or interval-only.
   refreshOnFocus: false,
-  checkUpdatesOnLaunch: false,
+  checkUpdatesOnLaunch: true,
   theme: "dark",
   accent: DEFAULT_ACCENT,
   deadlineDisplay: "remaining",
@@ -81,8 +81,10 @@ export function loadDisplayPrefs(): DisplayPrefs {
           : DEFAULT_DISPLAY_PREFS.checkUpdatesOnLaunch,
       theme: isThemeMode(parsed.theme) ? parsed.theme : DEFAULT_DISPLAY_PREFS.theme,
       accent: DEFAULT_ACCENT,
-      deadlineDisplay: parsed.deadlineDisplay === "date" ? "date" : DEFAULT_DISPLAY_PREFS.deadlineDisplay,
-      timeFormat: parsed.timeFormat === "12h" ? "12h" : DEFAULT_DISPLAY_PREFS.timeFormat,
+      // Deadlines always count down; ignore the retired date-mode preference.
+      deadlineDisplay: DEFAULT_DISPLAY_PREFS.deadlineDisplay,
+      // Exact timestamps always use the 24-hour clock, including legacy preferences.
+      timeFormat: DEFAULT_DISPLAY_PREFS.timeFormat,
     };
   } catch {
     return { ...DEFAULT_DISPLAY_PREFS };
@@ -92,7 +94,7 @@ export function loadDisplayPrefs(): DisplayPrefs {
 /** Persist preferences when storage is available; storage errors are ignored. */
 export function saveDisplayPrefs(prefs: DisplayPrefs): void {
   try {
-    localStorage.setItem(DISPLAY_PREFS_KEY, JSON.stringify({ ...prefs, accent: DEFAULT_ACCENT }));
+    localStorage.setItem(DISPLAY_PREFS_KEY, JSON.stringify({ ...prefs, accent: DEFAULT_ACCENT, deadlineDisplay: DEFAULT_DISPLAY_PREFS.deadlineDisplay, timeFormat: DEFAULT_DISPLAY_PREFS.timeFormat }));
   } catch {
     // Private mode etc: prefs just won't persist.
   }

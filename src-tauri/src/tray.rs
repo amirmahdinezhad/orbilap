@@ -63,7 +63,7 @@ impl MenuBarState {
 
     fn active_profile(&mut self, generation: u64, profile: Option<ProfileUsage>) -> bool {
         if generation != self.generation { return false; }
-        let profile = profile.filter(|profile| menu_bar_account(&self.settings, profile));
+        let profile = profile.filter(|profile| menu_bar_account(&self.settings, profile) || crate::floating_usage::selected(&self.settings, profile));
         let previous = self.profiles.iter().find(|profile| profile.provider == "antigravity").cloned();
         if previous.as_ref().map(|profile| &profile.id) != profile.as_ref().map(|profile| &profile.id) {
             self.invalidate_provider("antigravity");
@@ -78,7 +78,7 @@ impl MenuBarState {
     }
 
     fn provider_changed(&mut self, provider: &str) {
-        if self.settings.active_workspace().map_or(self.settings.menu_bar_provider.id() == provider, |w| w.shows_menu_bar_provider(provider)) {
+        if crate::floating_usage::provider_enabled(&self.settings, provider) || self.settings.active_workspace().map_or(self.settings.menu_bar_provider.id() == provider, |w| w.shows_menu_bar_provider(provider)) {
             self.invalidate_provider(provider);
         }
         self.profiles.retain(|profile| profile.provider != provider);
@@ -105,7 +105,9 @@ impl MenuBarState {
             || self.settings.codex_display_mode != settings.codex_display_mode
             || self.settings.menu_bar_enabled != settings.menu_bar_enabled
             || self.settings.multi_profile != settings.multi_profile
-            || self.settings.auto_switch_enabled != settings.auto_switch_enabled;
+            || self.settings.auto_switch_enabled != settings.auto_switch_enabled
+            || self.settings.floating_usage.enabled != settings.floating_usage.enabled
+            || self.settings.floating_usage.ids() != settings.floating_usage.ids();
         let refresh_changed = source_changed
             || self.settings.menu_bar_window != settings.menu_bar_window
             || self.settings.refresh_interval_secs != settings.refresh_interval_secs
@@ -132,6 +134,10 @@ impl MenuBarState {
 }
 
 impl MenuBarMonitor {
+    pub fn floating_limit_options(&self) -> crate::floating_usage::LimitOptions {
+        let state=self.state.lock().unwrap_or_else(|e|e.into_inner());
+        crate::floating_usage::limit_options(&state.settings,&state.profiles)
+    }
     pub fn active_antigravity(&self, app: &AppHandle, generation: u64, profile: Option<ProfileUsage>) {
         if self.state.lock().unwrap_or_else(|e| e.into_inner()).active_profile(generation, profile) {
             paint(app, self.state.clone());
@@ -172,15 +178,15 @@ impl MenuBarMonitor {
     /// Apply saved preferences immediately and wake the selected-source probe.
     pub fn update(&self, app: &AppHandle, settings: AppSettings) {
         app.state::<crate::desktop_switch::DesktopSwitch>().cancel_unenrolled(&settings);
-        let changed = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .update(settings);
-        if changed {
+        let (changed, resized) = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let resized = state.settings.floating_usage.mode != settings.floating_usage.mode;
+            (state.update(settings), resized)
+        };
+        if changed || resized {
             paint(app, self.state.clone());
-            self.refresh();
         }
+        if changed { self.refresh(); }
     }
 
     /// Coalesce refresh requests while a read-only probe is already running.
@@ -208,6 +214,7 @@ fn claude_preview() -> (AppSettings, Vec<ProfileUsage>) {
         ("codex", "demo-codex", "Codex demo", vec![("5-hour", 32.0)]),
         ("claude", "demo-claude", "Claude demo", vec![("5-hour", 28.0), ("weekly", 54.0)]),
     ].into_iter().map(|(provider, id, name, windows)| ProfileUsage {
+        plan: None,
         id: id.into(),
         name: name.into(),
         provider: provider.into(),
@@ -230,6 +237,40 @@ fn claude_preview() -> (AppSettings, Vec<ProfileUsage>) {
     (settings, profiles)
 }
 
+/// Rebuild this read-only projection per paint: get_state can replace monitor settings.
+#[cfg(debug_assertions)]
+fn floating_demo() -> (AppSettings, Vec<ProfileUsage>) {
+    let (mut settings, mut profiles) = claude_preview();
+    settings.floating_usage.enabled = true;
+    settings.floating_usage.providers = Some(vec!["codex".into(), "claude".into(), "antigravity".into()]);
+    let workspace = &mut settings.workspaces[0];
+    workspace.antigravity_account_ids = vec!["demo-antigravity".into()];
+    workspace.usage.account_windows.insert("demo-antigravity".into(),vec!["Gemini 4 Carbon · Weekly".into()]);
+    profiles.push(ProfileUsage {
+        plan: None, id:"demo-antigravity".into(), name:"Antigravity demo".into(),
+        provider:"antigravity".into(), active:true,
+        quota:Some(QuotaSet { provider:"antigravity".into(), error:None, as_of:None,reset_credits:None,
+            windows:Some(vec![QuotaWindow { window:"Gemini 4 Carbon · Weekly".into(),percent:40.0,resets_at:None,status:None }]) }),
+    });
+    for profile in &mut profiles {
+        if let Some(quota)=&mut profile.quota {
+            if let Some(windows)=&mut quota.windows { for window in windows { window.percent=50.0; } }
+        }
+    }
+    (settings, profiles)
+}
+
+/// Keep synthetic readings separate while allowing the owner's warning controls to be tested.
+#[cfg(debug_assertions)]
+fn floating_demo_with_preferences(real: &AppSettings) -> (AppSettings, Vec<ProfileUsage>) {
+    let (mut settings, profiles) = floating_demo();
+    if let Some(workspace) = real.active_workspace() {
+        settings.workspaces[0].usage.warning_colors = workspace.usage.warning_colors;
+        settings.workspaces[0].usage.warning_thresholds = workspace.usage.warning_thresholds.clone();
+    }
+    (settings, profiles)
+}
+
 /// Start once after the tray exists; no quota requests are made while disabled.
 pub fn start_monitor(app: &AppHandle, settings: AppSettings) {
     let (wake, receiver) = mpsc::sync_channel(1);
@@ -245,8 +286,12 @@ pub fn start_monitor(app: &AppHandle, settings: AppSettings) {
     });
     // Explicit development preview: no credentials, account writes or background probes.
     #[cfg(debug_assertions)]
-    if claude_preview_enabled() {
-        let (settings, profiles) = claude_preview();
+    if claude_preview_enabled() || std::env::var("ORBILAP_PREVIEW_FLOATING").as_deref() == Ok("1") {
+        let (mut settings, profiles) = claude_preview();
+        if std::env::var("ORBILAP_PREVIEW_FLOATING").as_deref() == Ok("1") {
+            settings.floating_usage.enabled = true;
+            settings.floating_usage.providers = Some(vec!["codex".into(), "claude".into()]);
+        }
         {
             let mut preview = state.lock().unwrap_or_else(|e| e.into_inner());
             preview.settings = settings;
@@ -295,6 +340,7 @@ pub fn start_monitor(app: &AppHandle, settings: AppSettings) {
                 let profiles = if settings.multi_profile.enabled
                     || settings.menu_bar_enabled
                     || settings.codex_menu_bar_enabled()
+                    || settings.floating_usage.enabled
                     || codex_cycle_enabled(&settings)
                     || antigravity_cycle(&settings).is_some()
                 {
@@ -371,8 +417,16 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
     let _ = app.run_on_main_thread(move || {
         let state = state.lock().unwrap_or_else(|e| e.into_inner());
         let now = time::OffsetDateTime::now_utc();
+        #[cfg(debug_assertions)]
+        let demo = (std::env::var("ORBILAP_PREVIEW_FLOATING").as_deref() == Ok("1")).then(|| floating_demo_with_preferences(&state.settings));
+        #[cfg(debug_assertions)]
+        let (floating_settings, floating_profiles) = demo.as_ref().map(|(settings,profiles)| (settings,profiles.as_slice()))
+            .unwrap_or((&state.settings,state.profiles.as_slice()));
+        #[cfg(not(debug_assertions))]
+        let (floating_settings, floating_profiles) = (&state.settings,state.profiles.as_slice());
+        crate::floating_usage::publish(&handle, floating_settings, floating_profiles, now);
         let light_menu_bar = menu_bar_is_light(&handle);
-        let (mut labels, mut icon_accent) = menu_bar_labels(&state.settings, &state.profiles, now, light_menu_bar);
+        let (mut labels, mut icon_accent) = menu_bar_labels(&state.settings, &state.profiles, now);
         if state.settings.active_workspace().is_none() && state.settings.menu_bar_enabled && state.settings.menu_bar_provider != MenuBarProvider::Codex && !state.settings.multi_profile.enabled {
             let mut windows = Vec::new();
             if state.settings.usage_appearance.session_enabled {
@@ -391,7 +445,7 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
                     text: title,
                     provider: None, show_provider: false,
                     caption: None,
-                    color: readable_warning_color(selected_color(&settings, state.quota.as_ref(), now), light_menu_bar),
+                    color: selected_color(&settings, state.quota.as_ref(), now),
                     segments: Vec::new(),
                     metrics: Vec::new(),
                 });
@@ -434,7 +488,7 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
                         .multi_profile
                         .show_profile_label
                         .then(|| account_initials(&profile.name)),
-                    color: readable_warning_color(selected_color(&settings, profile.quota.as_ref(), now), light_menu_bar),
+                    color: selected_color(&settings, profile.quota.as_ref(), now),
                     segments: Vec::new(),
                     metrics: Vec::new(),
                 });
@@ -486,7 +540,7 @@ fn paint(app: &AppHandle, state: Arc<Mutex<MenuBarState>>) {
     });
 }
 
-fn menu_bar_labels(settings: &AppSettings, profiles: &[ProfileUsage], now: time::OffsetDateTime, light_menu_bar: bool) -> (Vec<crate::tray_text::Label>, [u8; 3]) {
+fn menu_bar_labels(settings: &AppSettings, profiles: &[ProfileUsage], now: time::OffsetDateTime) -> (Vec<crate::tray_text::Label>, [u8; 3]) {
     let mut labels = Vec::new();
     let mut icon_accent = DEFAULT_ACCENT;
     let mut warning_used = 0.0_f64;
@@ -496,19 +550,18 @@ fn menu_bar_labels(settings: &AppSettings, profiles: &[ProfileUsage], now: time:
         let mut profiles: Vec<_> = profiles.iter().filter(|p| menu_bar_account(settings, p)).collect();
         profiles.sort_by_key(|p| match p.provider.as_str() { "codex" => 0, "claude" => 1, _ => 2 });
         for profile in profiles {
-            let prefs = menu_bar_account_preferences(settings, &profile.id, profile.quota.as_ref());
+            let prefs = menu_bar_account_preferences(settings, &profile.id, profile.quota.as_ref(), profile.plan.as_deref());
             if !prefs.menu_bar_enabled || prefs.menu_bar_windows.is_empty() { continue; }
             let remaining = workspace.is_none_or(|w| w.usage.show_remaining);
             let mut label = account_label(profile, &prefs, &thresholds, remaining, now);
             if let Some((used, color)) = account_warning(profile, &prefs, &thresholds, now) {
-                let color = readable_warning_color(color, light_menu_bar);
                 if used > warning_used { icon_accent = color; warning_used = used; }
                 tint_label(&mut label, color);
             }
             labels.push(label);
         }
     }
-    if settings.active_workspace().is_some_and(|w| w.usage.show_provider_logos.unwrap_or(labels.len() > 1)) {
+    if settings.active_workspace().is_some_and(|w| w.usage.show_provider_logos.unwrap_or(true)) {
         for label in &mut labels { label.show_provider = true; }
     }
     (labels, icon_accent)
@@ -517,6 +570,8 @@ fn menu_bar_labels(settings: &AppSettings, profiles: &[ProfileUsage], now: time:
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileUsage {
+    #[serde(skip)]
+    pub plan: Option<String>,
     pub id: String,
     pub name: String,
     pub active: bool,
@@ -525,7 +580,7 @@ pub struct ProfileUsage {
 }
 
 /// Apply workspace presentation without modifying saved account preferences.
-fn menu_bar_account_preferences(settings: &AppSettings, id: &str, quota: Option<&QuotaSet>) -> CodexAccountPreferences {
+pub(crate) fn menu_bar_account_preferences(settings: &AppSettings, id: &str, quota: Option<&QuotaSet>, plan: Option<&str>) -> CodexAccountPreferences {
     let mut prefs = settings.codex_accounts.get(id).cloned().unwrap_or_default();
     if let Some(workspace) = settings.active_workspace() {
         prefs.menu_bar_enabled = true;
@@ -533,7 +588,12 @@ fn menu_bar_account_preferences(settings: &AppSettings, id: &str, quota: Option<
             prefs.menu_bar_windows = windows.clone();
         } else if workspace.usage.default_menu_bar_limits && prefs.menu_bar_windows.is_empty() {
             if let Some(windows) = quota.filter(|q| q.error.is_none()).and_then(|q| q.windows.as_ref()) {
-                prefs.menu_bar_windows = ["5-hour", "weekly"].into_iter()
+                let defaults: &[&str] = match plan.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+                    Some("plus") => &["5-hour"],
+                    Some("pro") => &["weekly"],
+                    _ => &["5-hour", "weekly"],
+                };
+                prefs.menu_bar_windows = defaults.iter().copied()
                     .filter(|kind| windows.iter().any(|w| canonical_account_window(&w.window).as_deref() == Some(*kind)))
                     .map(str::to_owned)
                     .collect();
@@ -546,7 +606,7 @@ fn menu_bar_account_preferences(settings: &AppSettings, id: &str, quota: Option<
 }
 
 /// Preserve provider-specific bucket names; Codex continues to use canonical main windows.
-fn metric_window_key(provider: &str, window: &str) -> String {
+pub(crate) fn metric_window_key(provider: &str, window: &str) -> String {
     canonical_account_window(window).unwrap_or_else(|| if provider == "codex" { String::new() } else { window.to_owned() })
 }
 
@@ -602,6 +662,17 @@ fn account_warning(
 }
 
 /// Warning tint includes initials, all metrics and window labels.
+pub(crate) fn ordered_window_keys(provider: &str, keys: &[String]) -> Vec<String> {
+    let mut windows: Vec<_> = keys.iter().cloned().collect();
+    windows.sort_by_key(|kind| (if provider == "antigravity" { antigravity_model_order(kind) } else { 0 }, match kind.rsplit(" · ").next().unwrap_or(kind).to_ascii_lowercase().as_str() {
+        "5-hour" => 0,
+        "weekly" => 1,
+        "monthly" => 2,
+        _ => 3,
+    }));
+    windows
+}
+
 fn account_label(
     profile: &ProfileUsage,
     prefs: &CodexAccountPreferences,
@@ -614,18 +685,12 @@ fn account_label(
     let mut segments = Vec::new();
     let mut metrics = Vec::new();
     // Display order must not depend on the order limits were selected or saved.
-    let mut windows: Vec<_> = prefs.menu_bar_windows.iter().collect();
-    windows.sort_by_key(|kind| (if profile.provider == "antigravity" { antigravity_model_order(kind) } else { 0 }, match kind.rsplit(" · ").next().unwrap_or(kind).to_ascii_lowercase().as_str() {
-        "5-hour" => 0,
-        "weekly" => 1,
-        "monthly" => 2,
-        _ => 3,
-    }));
+    let windows = ordered_window_keys(&profile.provider, &prefs.menu_bar_windows);
     for (index, kind) in windows.into_iter().enumerate() {
         let window = profile.quota.as_ref().filter(|q| q.error.is_none())
             .and_then(|q| q.windows.as_ref())
-            .and_then(|ws| ws.iter().find(|w| metric_window_key(&profile.provider, &w.window) == *kind && current_window(w, now)));
-        let label = menu_bar_limit_label(&profile.provider, kind).filter(|_| prefs.show_labels);
+            .and_then(|ws| ws.iter().find(|w| metric_window_key(&profile.provider, &w.window) == kind && current_window(w, now)));
+        let label = menu_bar_limit_label(&profile.provider, &kind).filter(|_| prefs.show_labels);
         let value = window.map(|w| format!("{:.0}%", if show_remaining { remaining_percent(w.percent) } else { w.percent.clamp(0.0, 100.0).round() }))
             .unwrap_or_else(|| "—".into());
         let metric_color = color;
@@ -666,6 +731,7 @@ fn time_remaining_fraction(window: &QuotaWindow, now: time::OffsetDateTime) -> O
 
 fn monitoring_enabled(settings: &AppSettings) -> bool {
     settings.menu_bar_enabled
+        || settings.floating_usage.enabled
         || settings.codex_menu_bar_enabled()
         || codex_cycle_enabled(settings)
         || antigravity_cycle(settings).is_some()
@@ -716,6 +782,7 @@ pub fn collect_profiles(settings: &AppSettings) -> Vec<ProfileUsage> {
             let prefs = settings.codex_accounts.get(&p.id).cloned().unwrap_or_default();
             {
                 (codex_cycle_enabled(settings) && prefs.auto_switch)
+                    || (crate::floating_usage::provider_enabled(settings, "codex") && p.active)
                     || (codex_menu_bar_account(settings, &p.id, p.active)
                         && settings.active_workspace().map_or(
                             prefs.menu_bar_enabled && !prefs.menu_bar_windows.is_empty(),
@@ -735,6 +802,7 @@ pub fn collect_profiles(settings: &AppSettings) -> Vec<ProfileUsage> {
             .into_iter()
             .map(|p| {
                 scope.spawn(move || ProfileUsage {
+                    plan: p.plan,
                     quota: if p.connected {
                         crate::profiles::quota_for(&p.id)
                     } else {
@@ -751,7 +819,7 @@ pub fn collect_profiles(settings: &AppSettings) -> Vec<ProfileUsage> {
             .filter_map(|j| j.join().ok())
             .collect::<Vec<_>>()
     });
-    if settings.active_workspace().is_none_or(|w| w.shows_menu_bar_provider("claude")) {
+    if crate::floating_usage::provider_enabled(settings, "claude") || settings.active_workspace().is_none_or(|w| w.shows_menu_bar_provider("claude")) {
     if let Ok(profiles) = crate::claude_profiles::list() {
         samples.extend(
             profiles
@@ -759,10 +827,11 @@ pub fn collect_profiles(settings: &AppSettings) -> Vec<ProfileUsage> {
                 .filter(|p| {
                     if let Some(w) = settings.active_workspace() {
                         w.claude_account_ids.as_ref().is_none_or(|ids| ids.contains(&p.profile.id))
-                            && (w.shows_menu_bar_provider("claude"))
+                            && (w.shows_menu_bar_provider("claude") || crate::floating_usage::provider_enabled(settings, "claude"))
                     } else { settings.multi_profile.selected_ids.contains(&p.profile.id) }
                 })
                 .map(|p| ProfileUsage {
+                    plan: None,
                     id: p.profile.id,
                     name: p.profile.name,
                     provider: "claude".into(),
@@ -773,17 +842,18 @@ pub fn collect_profiles(settings: &AppSettings) -> Vec<ProfileUsage> {
     }
     }
     let rotation = antigravity_cycle(settings);
-    if let Some(workspace) = settings.active_workspace().filter(|w| rotation.is_some() || w.shows_menu_bar_provider("antigravity")) {
+    if let Some(workspace) = settings.active_workspace().filter(|w| rotation.is_some() || w.shows_menu_bar_provider("antigravity") || crate::floating_usage::provider_enabled(settings, "antigravity")) {
         if let Ok(accounts) = crate::antigravity::list() {
             let email = if accounts.is_empty() { None } else { crate::account_setup::current_google_email() };
             if let Some(active) = accounts.iter().find(|account| workspace.antigravity_account_ids.contains(&account.id)
                 && account.email.as_deref().zip(email.as_deref()).is_some_and(|(saved, current)| saved.eq_ignore_ascii_case(current))) {
                 let in_rotation = |id: &str| rotation.is_some_and(|w| w.usage.antigravity_switch_accounts.contains(id));
                 let sample = |account: &crate::antigravity::Saved| ProfileUsage {
+                    plan: None,
                     quota: crate::antigravity::card_quota(&account.id).ok(), active: account.id == active.id,
                     id: account.id.clone(), name: account.name.clone(), provider: "antigravity".into(),
                 };
-                if in_rotation(&active.id) || workspace.shows_menu_bar_provider("antigravity") {
+                if in_rotation(&active.id) || workspace.shows_menu_bar_provider("antigravity") || crate::floating_usage::provider_enabled(settings, "antigravity") {
                     let current = sample(active);
                     let cutoff = 100.0 - f64::from(workspace.usage.antigravity_switch_remaining);
                     let needs_backup = in_rotation(&active.id) && current.quota.as_ref()
@@ -818,9 +888,12 @@ fn account_initials(name: &str) -> String {
     first.into_iter().chain(last).flat_map(char::to_uppercase).collect()
 }
 
-fn threshold_color(used: f64, thresholds: &[u8]) -> Option<[u8; 3]> {
-    if !used.is_finite() { return None; }
-    thresholds.iter().copied().filter(|level| used >= f64::from(*level)).max().map(|level| warning_color(f64::from(level)))
+const WARNING_RED: [u8; 3] = [255, 69, 58];
+
+/// Legacy saved thresholds are retained for compatibility but no longer control warnings.
+/// Exactly 15% remaining stays neutral; only less than 15% is red.
+pub(crate) fn threshold_color(used: f64, _legacy_thresholds: &[u8]) -> Option<[u8; 3]> {
+    (used.is_finite() && used > 85.0).then_some(WARNING_RED)
 }
 
 /// The status button can be light over a bright wallpaper even with dark app windows.
@@ -851,10 +924,6 @@ fn appearance_is_light(appearance: &objc2_app_kit::NSAppearance) -> bool {
     }
 }
 
-/// Use a dark gold on light menu bars; retain bright yellow on dark menu bars.
-fn readable_warning_color(color: [u8; 3], light: bool) -> [u8; 3] {
-    if light && color == [255, 214, 10] { [138, 83, 0] } else { color }
-}
 
 fn tint_label(label: &mut crate::tray_text::Label, color: [u8; 3]) {
     label.color = color;
@@ -883,9 +952,6 @@ fn apply_menu_bar_ink(labels: &mut [crate::tray_text::Label], accent: &mut [u8; 
     template
 }
 
-fn warning_color(used: f64) -> [u8; 3] {
-    if used >= 95.0 { [255, 69, 58] } else if used >= 90.0 { [255, 159, 10] } else if used >= 75.0 { [255, 214, 10] } else { [48, 184, 107] }
-}
 
 /// Never switch on missing, stale, expired or model-specific data.
 fn auto_switch_target<'a>(
@@ -1056,7 +1122,7 @@ fn selected_color(
     if used >= 95.0 {
         [255, 69, 58]
     } else if used >= 90.0 {
-        [255, 159, 10]
+        WARNING_RED
     } else if used >= 75.0 {
         [255, 214, 10]
     } else {
@@ -1082,7 +1148,7 @@ fn window_label(window: MenuBarWindow) -> &'static str {
     }
 }
 
-fn current_window(window: &QuotaWindow, now: time::OffsetDateTime) -> bool {
+pub(crate) fn current_window(window: &QuotaWindow, now: time::OffsetDateTime) -> bool {
     window.percent.is_finite()
         && !window
             .resets_at
@@ -1091,9 +1157,10 @@ fn current_window(window: &QuotaWindow, now: time::OffsetDateTime) -> bool {
             .is_some_and(|reset| reset <= now)
 }
 
-/// Match Codex's Math.round(remaining): formatting alone rounds ties to even.
+/// Round ties up and preserve positive quota: zero means genuinely exhausted.
 fn remaining_percent(used: f64) -> f64 {
-    (100.0 - used).clamp(0.0, 100.0).round()
+    let remaining = (100.0 - used).clamp(0.0, 100.0);
+    if remaining > 0.0 { remaining.round().max(1.0) } else { 0.0 }
 }
 
 /// Always show remaining capacity for Codex, regardless of popup wording.
@@ -1159,10 +1226,50 @@ mod tests {
     use crate::settings::MenuBarProvider;
 
     #[test]
+    fn floating_demo_survives_main_settings_reload_without_persisting_synthetic_settings() {
+        let (settings,profiles)=floating_demo();
+        let mut state=MenuBarState{provider_updates:Default::default(),settings,profiles,quota:None,generation:0};
+        state.update(AppSettings::default()); // Same replacement performed by get_state.
+        let (settings,profiles)=floating_demo();
+        let snapshot=crate::floating_usage::snapshot(&settings,&profiles,time::OffsetDateTime::now_utc());
+        assert_eq!(snapshot.items.len(),3);
+        assert_eq!(snapshot.items[2].provider,"antigravity");assert_eq!(snapshot.items[2].limits[0].used,Some(50.0));
+        assert_eq!(snapshot.items[0].provider,"codex");assert_eq!(snapshot.items[0].limits[0].used,Some(50.0));
+        assert_eq!(snapshot.items[1].provider,"claude");assert_eq!(snapshot.items[1].limits[0].used,Some(50.0));
+        assert!(state.settings.active_workspace_id.is_none());
+    }
+
+    #[test]
+    fn floating_demo_follows_real_warning_preferences_without_real_accounts() {
+        let (mut real, _) = floating_demo();
+        real.workspaces[0].usage.warning_colors = true;
+        real.workspaces[0].usage.warning_thresholds = Some(vec![50]);
+        let (demo, profiles) = floating_demo_with_preferences(&real);
+        let sample = crate::floating_usage::snapshot(&demo, &profiles, time::OffsetDateTime::now_utc());
+        assert!(sample.items.iter().all(|item| item.limits[0].warning_color.is_none()));
+        real.workspaces[0].usage.warning_colors = false;
+        let (demo, profiles) = floating_demo_with_preferences(&real);
+        assert!(crate::floating_usage::snapshot(&demo, &profiles, time::OffsetDateTime::now_utc()).items.iter().all(|item| item.limits[0].warning_color.is_none()));
+    }
+
+    #[test]
+    fn floating_density_changes_keep_cache_and_do_not_request_a_provider_probe() {
+        let mut state = MenuBarState { provider_updates: Default::default(),
+            settings: settings(MenuBarWindow::FiveHour), quota: Some(quota(&[("5-hour",20.0)])),
+            profiles: vec![], generation: 7 };
+        for mode in [crate::floating_usage::DisplayMode::Badge, crate::floating_usage::DisplayMode::Badge] {
+            let mut next = state.settings.clone(); next.floating_usage.mode = mode;
+            assert!(!state.update(next));
+            assert_eq!(state.generation,7); assert!(state.quota.is_some());
+            assert_eq!(state.settings.floating_usage.mode,mode);
+        }
+    }
+
+    #[test]
     fn fresh_card_readings_do_not_discard_other_providers_from_an_inflight_probe() {
         let workspace = serde_json::from_value(serde_json::json!({"id":"studio","name":"Studio","accent":"#007aff","accountIds":["cx"],"antigravityAccountIds":["ag"],"usage":{"menuBarProviders":["codex","antigravity"]}})).unwrap();
         let settings = AppSettings { workspaces: vec![workspace], active_workspace_id: Some("studio".into()), ..Default::default() };
-        let profile = |provider: &str, id: &str, used: f64| ProfileUsage { id: id.into(), name: id.into(), provider: provider.into(), active: true, quota: Some(quota(&[("weekly",used)])) };
+        let profile = |provider: &str, id: &str, used: f64| ProfileUsage { plan: None, id: id.into(), name: id.into(), provider: provider.into(), active: true, quota: Some(quota(&[("weekly",used)])) };
         let fresh = profile("antigravity","ag",42.0);
         let mut state = MenuBarState { provider_updates: Default::default(), settings, quota: None, profiles: vec![], generation: 0 };
         assert!(state.card_usage(0,fresh));
@@ -1184,14 +1291,14 @@ mod tests {
             "usage":{"menuBarProviders":["antigravity","claude","codex"],"accountWindows":{"cx":["weekly"],"cl":["5-hour"],"ag":["Gemini 4 Carbon · Weekly"]}}
         })).unwrap();
         let mut settings = AppSettings { workspaces: vec![workspace], active_workspace_id: Some("studio".into()), ..Default::default() };
-        let profile = |provider: &str, id: &str| ProfileUsage { id: id.into(), name: id.into(), provider: provider.into(), active: true, quota: None };
+        let profile = |provider: &str, id: &str| ProfileUsage { plan: None, id: id.into(), name: id.into(), provider: provider.into(), active: true, quota: None };
         let profiles = vec![profile("antigravity","ag"), profile("claude","cl"), profile("codex","cx"), ProfileUsage { active: false, ..profile("codex","backup") }, profile("claude","outside")];
         let now = time::OffsetDateTime::now_utc();
-        let (labels, _) = menu_bar_labels(&settings, &profiles, now, false);
+        let (labels, _) = menu_bar_labels(&settings, &profiles, now);
         assert_eq!(labels.iter().filter_map(|l| l.provider.as_deref()).collect::<Vec<_>>(), ["codex","claude","antigravity"]);
         assert!(labels.iter().all(|l| l.show_provider));
         settings.workspaces[0].usage.show_provider_logos = Some(false);
-        assert!(menu_bar_labels(&settings, &profiles, now, false).0.iter().all(|l| !l.show_provider));
+        assert!(menu_bar_labels(&settings, &profiles, now).0.iter().all(|l| !l.show_provider));
         settings.workspaces[0].usage.show_provider_logos = None;
         assert!(labels.iter().all(|l| l.text.contains('—')), "unknown usage stays distinct from zero");
         assert!(labels[2].text.contains("Ca 1w"));
@@ -1199,15 +1306,15 @@ mod tests {
             assert!(crate::tray_text::render(&labels, true, DEFAULT_ACCENT, style, true, false).is_some());
         }
         settings.workspaces[0].usage.menu_bar_providers = Some(vec!["claude".into()]);
-        let (labels, _) = menu_bar_labels(&settings, &profiles, now, true);
-        assert_eq!(labels.len(), 1); assert!(!labels[0].show_provider);
+        let (labels, _) = menu_bar_labels(&settings, &profiles, now);
+        assert_eq!(labels.len(), 1); assert!(labels[0].show_provider);
         settings.workspaces[0].usage.show_provider_logos = Some(true);
-        assert!(menu_bar_labels(&settings, &profiles, now, true).0[0].show_provider);
+        assert!(menu_bar_labels(&settings, &profiles, now).0[0].show_provider);
         settings.workspaces[0].usage.menu_bar_providers = Some(vec![]);
-        assert!(menu_bar_labels(&settings, &profiles, now, true).0.is_empty());
+        assert!(menu_bar_labels(&settings, &profiles, now).0.is_empty());
         settings.workspaces[0].usage.menu_bar_providers = Some(vec!["codex".into(),"claude".into()]);
         settings.workspaces[0].usage.menu_bar_enabled = false;
-        assert!(menu_bar_labels(&settings, &profiles, now, false).0.is_empty());
+        assert!(menu_bar_labels(&settings, &profiles, now).0.is_empty());
     }
 
     #[test]
@@ -1247,30 +1354,15 @@ mod tests {
     }
 
     #[test]
-    fn yellow_warning_has_readable_light_and_dark_variants_and_one_shared_tint() {
-        let luminance = |color: [u8; 3]| {
-            let linear = |channel: u8| { let value = f64::from(channel) / 255.0; if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) } };
-            0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2])
-        };
-        for (light, background) in [(true, [225, 225, 225]), (false, [65, 65, 65])] {
-            let color = readable_warning_color(warning_color(75.0), light);
-            let (a, b) = (luminance(color), luminance(background));
-            assert!((a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5);
-            let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true, provider: "codex".into(), quota: Some(quota(&[("weekly", 80.0)])) };
-            let prefs = CodexAccountPreferences { warning_colors: true, menu_bar_windows: vec!["weekly".into()], ..Default::default() };
-            let mut label = account_label(&profile, &prefs, &[75, 90, 95], true, time::OffsetDateTime::now_utc());
-            tint_label(&mut label, color);
-            assert_eq!(label.color, color); assert!(label.segments.iter().all(|(_, c)| *c == color)); assert!(label.metrics.iter().all(|m| m.color == color));
-            if let Ok(path) = std::env::var("ORBILAP_TEST_WARNING_PALETTE") {
-                for (style_name, style) in [("percentages", crate::settings::MenuBarStyle::Percentages), ("progress", crate::settings::MenuBarStyle::Progress)] {
-                    let image = crate::tray_text::render(&[label.clone()], true, color, style, true, false).unwrap();
-                    let name = format!("{path}-{}-{style_name}", if light { "light" } else { "dark" });
-                    std::fs::write(format!("{name}.rgba"), image.rgba()).unwrap();
-                    std::fs::write(format!("{name}.json"), format!("[{},{}]", image.width(), image.height())).unwrap();
-                }
+    fn fixed_red_warning_is_strict_and_ignores_legacy_levels() {
+        for levels in [&[][..], &[50, 75, 90, 95][..]] {
+            for used in [0.0, 50.0, 75.0, 85.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                assert_eq!(threshold_color(used, levels), None);
+            }
+            for used in [85.001, 90.0, 95.0, 100.0] {
+                assert_eq!(threshold_color(used, levels), Some(WARNING_RED));
             }
         }
-        assert_eq!(readable_warning_color(warning_color(95.0), true), warning_color(95.0));
     }
 
     #[test]
@@ -1327,7 +1419,7 @@ mod tests {
         let settings = AppSettings { active_workspace_id: Some("studio".into()), workspaces: vec![workspace], ..Default::default() };
         let mut reading = quota(&[("Gemini 4 Carbon · Weekly", 20.0)]);
         reading.provider = "antigravity".into();
-        let profile = ProfileUsage { id:"google".into(), name:"Google".into(), provider:"antigravity".into(), active:true, quota:Some(reading) };
+        let profile = ProfileUsage { plan: None, id:"google".into(), name:"Google".into(), provider:"antigravity".into(), active:true, quota:Some(reading) };
         let mut state = MenuBarState { provider_updates: Default::default(), settings, quota:None, profiles:vec![profile.clone()], generation:7 };
         let mut identity = profile.clone(); identity.quota = None;
         assert!(state.active_profile(7, Some(identity)));
@@ -1363,12 +1455,32 @@ mod tests {
         })).unwrap();
         let both = quota(&[("rolling", 23.5), ("Weekly", 81.0), ("monthly", 50.0)]);
         let weekly = quota(&[("weekly", 81.0)]);
-        assert_eq!(menu_bar_account_preferences(&app, "one", Some(&both)).menu_bar_windows, ["5-hour", "weekly"]);
-        assert_eq!(menu_bar_account_preferences(&app, "one", Some(&weekly)).menu_bar_windows, ["weekly"]);
-        assert!(menu_bar_account_preferences(&app, "one", None).menu_bar_windows.is_empty());
+        assert_eq!(menu_bar_account_preferences(&app, "one", Some(&both), None).menu_bar_windows, ["5-hour", "weekly"]);
+        assert_eq!(menu_bar_account_preferences(&app, "one", Some(&weekly), None).menu_bar_windows, ["weekly"]);
+        assert!(menu_bar_account_preferences(&app, "one", None, None).menu_bar_windows.is_empty());
+
+        for (plan, expected) in [("plus", "5-hour"), ("pro", "weekly"), (" Pro ", "weekly")] {
+            assert_eq!(menu_bar_account_preferences(&app, "one", Some(&both), Some(plan)).menu_bar_windows, [expected]);
+            let profile = ProfileUsage { plan: Some(plan.into()), id: "one".into(), name: "Synthetic".into(), active: true, provider: "codex".into(), quota: Some(both.clone()) };
+            let labels = menu_bar_labels(&app, &[profile], time::OffsetDateTime::now_utc()).0;
+            assert_eq!(labels.len(), 1);
+            assert!(labels[0].show_provider);
+            assert_eq!(labels[0].metrics.len(), 1);
+            assert!(labels[0].text.contains(if expected == "weekly" { "19%" } else { "77%" }));
+            for style in [crate::settings::MenuBarStyle::Percentages, crate::settings::MenuBarStyle::ResetTimeline, crate::settings::MenuBarStyle::Progress] {
+                for show_app_logo in [true, false] {
+                    assert!(crate::tray_text::render(&labels, true, DEFAULT_ACCENT, style, show_app_logo, true).is_some());
+                }
+            }
+        }
+        assert!(menu_bar_account_preferences(&app, "one", Some(&weekly), Some("plus")).menu_bar_windows.is_empty(), "Never invent an unreported limit");
+        app.codex_accounts.entry("one".into()).or_default().menu_bar_windows = vec!["weekly".into()];
+        assert_eq!(menu_bar_account_preferences(&app, "one", Some(&both), Some("plus")).menu_bar_windows, ["weekly"], "Keep saved account choices");
+        app.workspaces[0].usage.account_windows.insert("one".into(), vec!["5-hour".into()]);
+        assert_eq!(menu_bar_account_preferences(&app, "one", Some(&both), Some("pro")).menu_bar_windows, ["5-hour"], "Keep workspace choices");
 
         app.workspaces[0].usage.account_windows.insert("one".into(), vec![]);
-        assert!(menu_bar_account_preferences(&app, "one", Some(&both)).menu_bar_windows.is_empty());
+        assert!(menu_bar_account_preferences(&app, "one", Some(&both), None).menu_bar_windows.is_empty());
     }
 
     #[test]
@@ -1529,6 +1641,7 @@ mod tests {
             quota.windows.as_mut().unwrap()[0].resets_at =
                 Some(crate::timestamps::format_rfc3339(now + time::Duration::hours(2)));
             ProfileUsage {
+                plan: None,
                 id: id.into(),
                 name: id.into(),
                 active,
@@ -1570,7 +1683,7 @@ mod tests {
             let mut usage = quota(values);
             usage.provider = "antigravity".into();
             if active { usage.windows.as_mut().unwrap()[0].resets_at = Some(reset.clone()); }
-            ProfileUsage { id: id.into(), name: id.into(), active, provider: "antigravity".into(), quota: Some(usage) }
+            ProfileUsage { plan: None, id: id.into(), name: id.into(), active, provider: "antigravity".into(), quota: Some(usage) }
         };
         let five_hour = "Gemini 4 Carbon · 5-hour";
         let weekly = "Gemini 4 Carbon · Weekly";
@@ -1612,6 +1725,22 @@ mod tests {
     }
 
     #[test]
+    fn positive_remaining_quota_is_never_displayed_as_exhausted() {
+        let now = time::OffsetDateTime::now_utc();
+        let prefs = CodexAccountPreferences { menu_bar_windows: vec!["5-hour".into()], ..Default::default() };
+        for (used, expected) in [(99.5, "1%"), (99.51, "1%"), (99.9, "1%"), (99.999, "1%"), (100.0, "0%"), (101.0, "0%")] {
+            let profile = ProfileUsage {
+                plan: None, id: "synthetic".into(), name: "Test".into(), active: true,
+                provider: "codex".into(), quota: Some(quota(&[("5-hour", used)])),
+            };
+            assert_eq!(account_label(&profile, &prefs, &[], true, now).text, format!("5h {expected}"));
+            let mut settings = AppSettings::default();
+            settings.menu_bar_enabled = true;
+            assert!(usage_title(&settings, profile.quota.as_ref(), now).ends_with(expected));
+        }
+    }
+
+    #[test]
     fn codex_low_remaining_percentage_rounds_up_at_half_points() {
         let now = time::OffsetDateTime::now_utc();
         let prefs = CodexAccountPreferences {
@@ -1619,6 +1748,7 @@ mod tests {
             ..Default::default()
         };
         let profile = ProfileUsage {
+            plan: None,
             id: "personal".into(), name: "Personal".into(), active: true,
             provider: "codex".into(), quota: Some(quota(&[("5-hour", 93.5)])),
         };
@@ -1632,12 +1762,12 @@ mod tests {
         app.active_workspace_id = Some("studio".into());
         app.codex_accounts.insert("emma".into(), CodexAccountPreferences { color:"#007aff".into(), ..Default::default() });
         app.workspaces.push(serde_json::from_value(serde_json::json!({"id":"studio","name":"Studio","accent":"#007aff","accountIds":["emma"],"usage":{"accountWindows":{"emma":["weekly"]},"showAccountName":true}})).unwrap());
-        let profile = ProfileUsage {id:"emma".into(),name:"Emma Brooks".into(),active:true,provider:"codex".into(),quota:Some(quota(&[("weekly",20.0)]))};
+        let profile = ProfileUsage { plan: None,id:"emma".into(),name:"Emma Brooks".into(),active:true,provider:"codex".into(),quota:Some(quota(&[("weekly",20.0)]))};
         let mut state = MenuBarState { provider_updates: Default::default(),settings:app.clone(),quota:None,profiles:vec![profile],generation:0};
         app.workspaces[0].accent = "#7c6cf0".into();
         assert!(state.update(app));
         assert_eq!(state.profiles.len(),1,"changing legacy workspace metadata keeps the sample");
-        let prefs = menu_bar_account_preferences(&state.settings, "emma", None);
+        let prefs = menu_bar_account_preferences(&state.settings, "emma", None, None);
         let label = account_label(&state.profiles[0],&prefs,state.settings.menu_bar_warning_thresholds(),true,time::OffsetDateTime::now_utc());
         assert_eq!(label.color,DEFAULT_ACCENT,"metrics and logo retain card-matched charcoal without a Near limit warning");
         assert!(label.segments.iter().all(|(_,color)| *color==DEFAULT_ACCENT));
@@ -1654,14 +1784,14 @@ mod tests {
         // The workspace override must not hide warning colors, for any provider.
         state.settings.workspaces[0].usage.warning_colors = true;
         for provider in ["codex","claude","antigravity"] {
-            let prefs = menu_bar_account_preferences(&state.settings, "emma", None);
+            let prefs = menu_bar_account_preferences(&state.settings, "emma", None, None);
             let profile = ProfileUsage {provider:provider.into(),quota:Some(quota(&[("weekly",96.0)])),..state.profiles[0].clone()};
             let label = account_label(&profile,&prefs,state.settings.menu_bar_warning_thresholds(),true,time::OffsetDateTime::now_utc());
             assert_eq!(label.color,[255,69,58]);
             assert!(label.metrics.iter().all(|metric| metric.color==[255,69,58]));
         }
         state.settings.active_workspace_id = None;
-        assert_eq!(menu_bar_account_preferences(&state.settings, "emma", None).color,"#007aff");
+        assert_eq!(menu_bar_account_preferences(&state.settings, "emma", None, None).color,"#007aff");
     }
 
     #[test]
@@ -1678,7 +1808,7 @@ mod tests {
                 reset_fraction: None, color: DEFAULT_ACCENT,
             }],
         };
-        let warning = warning_color(96.0);
+        let warning = WARNING_RED;
         for light in [true, false] {
             for has_warning in [false, true] {
                 let mut labels = vec![label.clone(), label.clone()];
@@ -1709,7 +1839,7 @@ mod tests {
         app.active_workspace_id = Some(workspace.id.clone());
         app.workspaces.push(workspace);
         let mut state = MenuBarState { provider_updates: Default::default(), settings: app.clone(), quota: None,
-            profiles: vec![ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true,
+            profiles: vec![ProfileUsage { plan: None, id: "emma".into(), name: "Emma Brooks".into(), active: true,
                 provider: "codex".into(), quota: Some(quota(&[("weekly", 96.0)])) }], generation: 0 };
         app.workspaces[0].usage.warning_colors = true;
         assert!(state.update(app));
@@ -1720,48 +1850,48 @@ mod tests {
     }
 
     #[test]
-    fn saved_color_levels_repaint_cached_metrics_and_icon_together() {
+    fn legacy_color_levels_do_not_override_fixed_red() {
         let mut app = AppSettings::default();
         app.active_workspace_id = Some("studio".into());
         app.workspaces.push(serde_json::from_value(serde_json::json!({"id":"studio","name":"Studio","accent":"#007aff","accountIds":["emma"],"usage":{"warningColors":true,"warningThresholds":[75,90]}})).unwrap());
-        let profile = ProfileUsage {id:"emma".into(),name:"Emma Brooks".into(),active:true,provider:"codex".into(),quota:Some(quota(&[("weekly",96.0)]))};
+        let profile = ProfileUsage { plan: None,id:"emma".into(),name:"Emma Brooks".into(),active:true,provider:"codex".into(),quota:Some(quota(&[("weekly",96.0)]))};
         let mut state = MenuBarState { provider_updates: Default::default(),settings:app.clone(),quota:None,profiles:vec![profile],generation:0};
         let prefs = CodexAccountPreferences {menu_bar_windows:vec!["weekly".into()],warning_colors:true,..Default::default()};
         let now = time::OffsetDateTime::now_utc();
         let levels = state.settings.menu_bar_warning_thresholds();
-        assert_eq!(account_warning(&state.profiles[0],&prefs,levels,now).unwrap().1,[255,159,10]);
+        assert_eq!(account_warning(&state.profiles[0],&prefs,levels,now).unwrap().1,WARNING_RED);
         for style in [crate::settings::MenuBarStyle::Percentages,crate::settings::MenuBarStyle::Progress] {
             let label = account_label(&state.profiles[0],&prefs,levels,true,now);
-            assert_eq!(label.metrics[0].color,[255,159,10]);
-            let image = crate::tray_text::render(&[label],true,[255,159,10],style, true, false).unwrap();
-            assert!(image.rgba().chunks_exact(4).any(|p| p[..3]==[255,159,10] && p[3]>240));
+            assert_eq!(label.metrics[0].color,WARNING_RED);
+            let image = crate::tray_text::render(&[label],true,WARNING_RED,style, true, false).unwrap();
+            assert!(image.rgba().chunks_exact(4).any(|p| p[..3]==WARNING_RED && p[3]>240));
         }
         app.workspaces[0].usage.warning_thresholds = Some(vec![]);
         assert!(state.update(app));
         assert_eq!(state.profiles.len(),1);
-        assert!(account_warning(&state.profiles[0],&prefs,state.settings.menu_bar_warning_thresholds(),now).is_none());
+        assert_eq!(account_warning(&state.profiles[0],&prefs,state.settings.menu_bar_warning_thresholds(),now).unwrap().1, WARNING_RED);
     }
 
     #[test]
-    fn workspace_thresholds_color_both_metrics_and_icon_and_names_use_initials() {
-        let profile = ProfileUsage { id: "emma".into(), name: "Emma Louise Brooks".into(), active: true,
+    fn fixed_red_colors_metrics_and_icon_and_names_use_initials() {
+        let profile = ProfileUsage { plan: None, id: "emma".into(), name: "Emma Louise Brooks".into(), active: true,
             provider: "codex".into(), quota: Some(quota(&[("weekly", 96.0)])) };
         let mut prefs = CodexAccountPreferences { menu_bar_windows: vec!["weekly".into()], warning_colors: true, ..Default::default() };
-        let thresholds = [75, 90]; // Disabled critical level falls back to orange.
+        let thresholds = [75, 90]; // Legacy levels cannot override the fixed red rule.
         let label = account_label(&profile, &prefs, &thresholds, true, time::OffsetDateTime::now_utc());
-        let orange = [255, 159, 10];
+        let red = WARNING_RED;
         assert_eq!(label.caption.as_deref(), Some("EB"));
-        assert_eq!(label.segments[0].1, orange);
+        assert_eq!(label.segments[0].1, red);
         let image = crate::tray_text::render(&[label], true, threshold_color(96.0, &thresholds).unwrap(), crate::settings::MenuBarStyle::Percentages, true, false).unwrap();
         for logo in [true, false] {
             assert!(image.rgba().chunks_exact(4).enumerate().any(|(index,pixel)| {
                 let x = index as u32 % image.width();
-                pixel[..3] == orange && pixel[3] > 240 && if logo { x < 46 } else { x >= 52 }
+                pixel[..3] == red && pixel[3] > 240 && if logo { x < 46 } else { x >= 52 }
             }));
         }
         prefs.show_profile_label = false;
         assert!(account_label(&profile, &prefs, &thresholds, true, time::OffsetDateTime::now_utc()).caption.is_none());
-        assert_eq!(threshold_color(96.0, &[]), None);
+        assert_eq!(threshold_color(96.0, &[]), Some(WARNING_RED));
         assert_eq!(account_initials("  امیر محمدی "), "ام");
         assert_eq!(account_initials("Emma"), "EM");
         assert_eq!(account_initials("Jo"), "JO");
@@ -1777,7 +1907,7 @@ mod tests {
     fn menu_bar_shows_five_hour_before_weekly_regardless_of_selection_order() {
         let now = time::OffsetDateTime::now_utc();
         for provider in ["codex", "claude", "antigravity"] {
-            let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true,
+            let profile = ProfileUsage { plan: None, id: "emma".into(), name: "Emma Brooks".into(), active: true,
                 provider: provider.into(), quota: Some(quota(&[("weekly", 16.0), ("5-hour", 0.0)])) };
             let mut prefs = CodexAccountPreferences { menu_bar_windows: vec!["weekly".into(), "5-hour".into()], ..Default::default() };
             let label = account_label(&profile, &prefs, &[], true, now);
@@ -1795,7 +1925,7 @@ mod tests {
     #[test]
     fn progress_metrics_follow_selected_limits_and_capacity_direction() {
         let now = time::OffsetDateTime::now_utc();
-        let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true, provider: "codex".into(), quota: Some(quota(&[("5-hour", 30.0), ("weekly", 96.0), ("monthly", 50.0)])) };
+        let profile = ProfileUsage { plan: None, id: "emma".into(), name: "Emma Brooks".into(), active: true, provider: "codex".into(), quota: Some(quota(&[("5-hour", 30.0), ("weekly", 96.0), ("monthly", 50.0)])) };
         let prefs = CodexAccountPreferences { menu_bar_windows: vec!["5-hour".into(), "weekly".into(), "15m".into()], warning_colors: true, ..Default::default() };
         let remaining = account_label(&profile, &prefs, &[75, 90, 95], true, now);
         assert_eq!(remaining.metrics.len(), 3);
@@ -1811,7 +1941,7 @@ mod tests {
     #[test]
     fn limit_warning_tints_every_menu_bar_element_in_both_styles() {
         let now = time::OffsetDateTime::now_utc();
-        let profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true,
+        let profile = ProfileUsage { plan: None, id: "emma".into(), name: "Emma Brooks".into(), active: true,
             provider: "codex".into(), quota: Some(quota(&[("5-hour", 30.0), ("weekly", 96.0)])) };
         let prefs = CodexAccountPreferences { color: "#7c6cf0".into(), menu_bar_windows: vec!["5-hour".into(), "weekly".into(), "15m".into()], warning_colors: true, ..Default::default() };
         let label = account_label(&profile, &prefs, &[75, 90, 95], true, now);
@@ -1827,19 +1957,19 @@ mod tests {
     }
 
     #[test]
-    fn uniform_warning_follows_enabled_levels_and_restores_identity_on_recovery() {
+    fn uniform_red_restores_identity_on_recovery() {
         let now = time::OffsetDateTime::now_utc();
-        let mut profile = ProfileUsage { id: "emma".into(), name: "Emma Brooks".into(), active: true,
+        let mut profile = ProfileUsage { plan: None, id: "emma".into(), name: "Emma Brooks".into(), active: true,
             provider: "codex".into(), quota: Some(quota(&[("5-hour", 80.0), ("weekly", 96.0), ("monthly", 100.0)])) };
         let mut prefs = CodexAccountPreferences { color: "#7c6cf0".into(), menu_bar_windows: vec!["5-hour".into(), "weekly".into()], warning_colors: true, ..Default::default() };
-        assert_eq!(account_warning(&profile, &prefs, &[75, 90], now), Some((96.0, [255, 159, 10])));
+        assert_eq!(account_warning(&profile, &prefs, &[75, 90], now), Some((96.0, WARNING_RED)));
         profile.quota.as_mut().unwrap().windows.as_mut().unwrap()[1].resets_at = Some(crate::timestamps::format_rfc3339(now - time::Duration::seconds(1)));
-        assert_eq!(account_warning(&profile, &prefs, &[75, 90, 95], now), Some((80.0, [255, 214, 10])), "expired and unselected limits cannot escalate the tint");
+        assert_eq!(account_warning(&profile, &prefs, &[75, 90, 95], now), None, "expired and unselected limits cannot escalate the tint");
         profile.quota.as_mut().unwrap().windows.as_mut().unwrap()[0].percent = 20.0;
         assert_eq!(account_warning(&profile, &prefs, &[75, 90, 95], now), None);
         assert_eq!(account_label(&profile, &prefs, &[75, 90, 95], true, now).color, DEFAULT_ACCENT);
         profile.quota.as_mut().unwrap().windows.as_mut().unwrap()[0].percent = 100.0;
-        assert_eq!(account_warning(&profile, &prefs, &[], now), None);
+        assert_eq!(account_warning(&profile, &prefs, &[], now), Some((100.0, WARNING_RED)));
         prefs.warning_colors = false;
         assert_eq!(account_warning(&profile, &prefs, &[75, 90, 95], now), None);
         prefs.warning_colors = true;
@@ -1856,13 +1986,13 @@ mod tests {
             warning_colors: true,
             ..Default::default()
         };
-        let mut profile = ProfileUsage { id: "work".into(), name: "Work".into(), active: true, provider: "codex".into(), quota: Some(quota(&[("5-hour", 30.0), ("Weekly", 96.0)])) };
+        let mut profile = ProfileUsage { plan: None, id: "work".into(), name: "Work".into(), active: true, provider: "codex".into(), quota: Some(quota(&[("5-hour", 30.0), ("Weekly", 96.0)])) };
         let label = account_label(&profile, &prefs, &[75, 90, 95], true, now);
         assert_eq!(label.text, "5h 70%  1w 4%  15m —");
         assert_eq!(label.segments[0].1, [255, 69, 58]);
         assert_eq!(label.segments[1].1, [255, 69, 58]);
         assert_eq!(label.segments[2].1, [255, 69, 58]);
-        assert_eq!(account_label(&profile, &prefs, &[], true, now).segments[1].1, DEFAULT_ACCENT);
+        assert_eq!(account_label(&profile, &prefs, &[], true, now).segments[1].1, WARNING_RED);
         prefs.warning_colors = false;
         assert_eq!(account_label(&profile, &prefs, &[75, 90, 95], true, now).segments[1].1, DEFAULT_ACCENT);
         profile.quota.as_mut().unwrap().error = Some("Unavailable".into());
@@ -1875,7 +2005,7 @@ mod tests {
         let sample = |id: &str, active: bool, used: f64| {
             let mut q = quota(&[("Weekly", used)]);
             q.windows.as_mut().unwrap()[0].resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::days(2)));
-            ProfileUsage { id: id.into(), name: id.into(), active, provider: "codex".into(), quota: Some(q) }
+            ProfileUsage { plan: None, id: id.into(), name: id.into(), active, provider: "codex".into(), quota: Some(q) }
         };
         let samples = vec![sample("first", true, 100.0), sample("excluded", false, 0.0), sample("second", false, 20.0)];
         let mut settings = AppSettings::default();
@@ -1895,14 +2025,14 @@ mod tests {
     #[test]
     fn named_provider_buckets_keep_their_own_limit_and_warning_color() {
         let now = time::OffsetDateTime::now_utc();
-        let profile = ProfileUsage { id: "google".into(), name: "Google work".into(), provider: "antigravity".into(), active: false, quota: Some(quota(&[("Gemini Pro", 96.0), ("Gemini Flash", 20.0)])) };
+        let profile = ProfileUsage { plan: None, id: "google".into(), name: "Google work".into(), provider: "antigravity".into(), active: false, quota: Some(quota(&[("Gemini Pro", 96.0), ("Gemini Flash", 20.0)])) };
         let prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini Pro".into()], warning_colors: true, ..Default::default() };
         let label = account_label(&profile, &prefs, &[75, 90, 95], true, now);
         assert_eq!(label.text, "Pro 4%");
         assert_eq!(label.metrics[0].label.as_deref(), Some("Pro"));
         assert_eq!(label.segments[0].1, [255, 69, 58]);
-        assert_eq!(warning_color(75.0), [255, 214, 10]);
-        assert_eq!(warning_color(90.0), [255, 159, 10]);
+        assert_eq!(threshold_color(75.0, &[75]), None);
+        assert_eq!(threshold_color(90.0, &[90]), Some(WARNING_RED));
     }
 
     #[test]
@@ -1914,7 +2044,7 @@ mod tests {
                 "usage":{"menuBarEnabled":true, "menuBarProvider":provider, "menuBarAccountId":"saved", "activeAccounts":{provider:"saved"}}
             })).unwrap();
             let settings = AppSettings { active_workspace_id: Some("studio".into()), workspaces: vec![workspace], ..Default::default() };
-            let profile = ProfileUsage { id: "live".into(), name: "Live".into(), provider: provider.into(), active: true, quota: None };
+            let profile = ProfileUsage { plan: None, id: "live".into(), name: "Live".into(), provider: provider.into(), active: true, quota: None };
             assert!(menu_bar_account(&settings, &profile));
             assert!(!menu_bar_account(&settings, &ProfileUsage { id: "saved".into(), active: false, ..profile.clone() }));
             assert!(!menu_bar_account(&settings, &ProfileUsage { id: "outsider".into(), ..profile.clone() }));
@@ -1929,13 +2059,13 @@ mod tests {
         let windows = data.windows.as_mut().unwrap();
         windows[0].resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::days(2)));
         windows[1].resets_at = Some(crate::timestamps::format_rfc3339(now + time::Duration::hours(1)));
-        let profile = ProfileUsage { id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true, quota: Some(data) };
+        let profile = ProfileUsage { plan: None, id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true, quota: Some(data) };
         let prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini 4 Argon · Weekly".into(), "Gemini 4 Carbon · 5-hour".into()], warning_colors: true, ..Default::default() };
         let label = account_label(&profile, &prefs, &[75, 90, 95], true, now);
         assert_eq!(label.text, "Ca 5h 80%  Ar 1w 25%");
         assert_eq!(label.metrics[0].label.as_deref(), Some("Ca 5h"));
         assert_eq!(label.metrics[1].label.as_deref(), Some("Ar 1w"));
-        assert_eq!(label.color, warning_color(75.0));
+        assert_eq!(label.color, DEFAULT_ACCENT);
         assert_eq!(label.metrics[0].fraction, Some(0.8));
         assert_eq!(label.metrics[1].fraction, Some(0.25));
         assert_eq!(label.metrics[0].reset_fraction, Some(0.2));
@@ -1945,7 +2075,7 @@ mod tests {
     #[test]
     fn matching_model_periods_have_short_distinct_labels_even_when_usage_is_unavailable() {
         let now = time::OffsetDateTime::now_utc();
-        let mut profile = ProfileUsage { id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true,
+        let mut profile = ProfileUsage { plan: None, id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true,
             quota: Some(quota(&[("Gemini 4 Carbon · 5-hour", 1.0), ("Gemini 4 Argon · Weekly", 15.0), ("Gemini 4 Carbon · Weekly", 1.0)])) };
         let mut prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini 4 Carbon · 5-hour".into(), "Gemini 4 Argon · Weekly".into(), "Gemini 4 Carbon · Weekly".into()], ..Default::default() };
         let label = account_label(&profile, &prefs, &[], true, now);
@@ -1966,7 +2096,7 @@ mod tests {
 
     #[test]
     fn antigravity_orders_carbon_argon_then_shared_gemini_before_sorting_periods() {
-        let profile = ProfileUsage { id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true,
+        let profile = ProfileUsage { plan: None, id: "google".into(), name: "Google".into(), provider: "antigravity".into(), active: true,
             quota: Some(quota(&[("Gemini · 5-hour", 1.0), ("Gemini 4 Argon · Weekly", 15.0), ("Gemini 4 Carbon · Weekly", 1.0)])) };
         let mut prefs = CodexAccountPreferences { menu_bar_windows: vec!["Gemini · 5-hour".into(), "Gemini 4 Argon · Weekly".into(), "Gemini 4 Carbon · Weekly".into()], ..Default::default() };
         for _ in 0..2 {
@@ -1981,7 +2111,7 @@ mod tests {
     fn switch_threshold_uses_remaining_capacity_and_rejects_targets_inside_threshold() {
         let now = time::OffsetDateTime::now_utc();
         let quota = |used| QuotaSet { provider: "codex".into(), windows: Some(vec![crate::quota::QuotaWindow { window: "weekly".into(), percent: used, resets_at: Some(crate::timestamps::format_rfc3339(now + time::Duration::hours(1))), status: None }]), error: None, reset_credits: None, as_of: None };
-        let mut samples = vec![ProfileUsage { id: "first".into(), name: "First".into(), active: true, provider: "codex".into(), quota: Some(quota(97.9)) }, ProfileUsage { id: "second".into(), name: "Second".into(), active: false, provider: "codex".into(), quota: Some(quota(10.0)) }];
+        let mut samples = vec![ProfileUsage { plan: None, id: "first".into(), name: "First".into(), active: true, provider: "codex".into(), quota: Some(quota(97.9)) }, ProfileUsage { plan: None, id: "second".into(), name: "Second".into(), active: false, provider: "codex".into(), quota: Some(quota(10.0)) }];
         let mut settings = AppSettings::default();
         for id in ["first", "second"] { settings.codex_accounts.insert(id.into(), CodexAccountPreferences { auto_switch: true, ..Default::default() }); }
         assert!(auto_switch_target(&samples, &settings, now).is_none());

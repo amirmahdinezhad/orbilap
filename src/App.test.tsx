@@ -15,11 +15,14 @@ const api = vi.hoisted(() => ({
   scheduleCodexRestart: vi.fn(), codexRestartStatus: vi.fn(), cancelCodexRestart: vi.fn(), runCodexRestartNow: vi.fn(),
   claudeProfileQuota: vi.fn(), codexBankedResets: vi.fn(), prepareCodexReset: vi.fn(), consumeCodexReset: vi.fn(),
   cliQuotas: vi.fn(), codexResetStatus: vi.fn(), quitApp: vi.fn(),
+  hidePanelFromShortcut: vi.fn(), setPanelShortcutRecording: vi.fn(),
   prettyError: vi.fn((e: unknown) => e instanceof Error ? e.message : String(e)),
 }));
 vi.mock("./api", () => api);
 const nativeEvents = vi.hoisted(() => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => nativeEvents);
+const appUpdates = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("@tauri-apps/plugin-updater", () => appUpdates);
 import App from "./App";
 import type { SetupAccount } from "./api";
 const opener = vi.hoisted(() => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
@@ -38,6 +41,7 @@ const stagedClaude: SetupAccount = { id: "staged-claude", provider: "claude", na
 const stagedCodex: SetupAccount = { id: "staged-codex", provider: "codex", name: "Backup", email: "backup@example.com", source: "desktop", subscription: { id: "chatgpt", service: "ChatGPT", plan: "plus" } };
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear();
+  appUpdates.check.mockResolvedValue(null);
   api.claudeProfileQuota.mockResolvedValue({provider:"claude",windows:[]});
   api.antigravityAccountQuota.mockResolvedValue({provider:"antigravity",windows:[]});
   api.cliQuotas.mockResolvedValue([]);
@@ -77,46 +81,27 @@ async function fileMethod(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: /Import auth.json/ }));
 }
 
-it("ignores Tab and Shift+Tab on home and in portaled dialogs while other keys still work", async () => {
+it("supports Tab on home and in portaled settings, while shortcut dismissal preserves dialogs", async () => {
+  const handlers = new Map<string, () => void>();
+  nativeEvents.listen.mockImplementation(async (name, callback) => { handlers.set(name, callback); return vi.fn(); });
+  api.hidePanelFromShortcut.mockResolvedValue(undefined);
   const user = userEvent.setup();
-  const { unmount } = render(<App />);
+  render(<App />);
   const settings = await screen.findByRole("button", { name: /^Settings$/ });
   settings.focus();
-  for (const shift of [false, true]) {
-    await user.tab({ shift });
-    expect(settings).toHaveFocus();
-  }
-
+  await user.tab({ shift: true });
+  expect(settings).not.toHaveFocus();
+  await user.tab(); expect(settings).toHaveFocus();
   await user.keyboard("{Enter}");
   const general = await screen.findByRole("tab", { name: /^General$/ });
-  general.focus();
-  for (const shift of [false, true]) {
-    await user.tab({ shift });
-    expect(general).toHaveFocus();
-  }
-
-  const downstream = vi.fn();
-  document.addEventListener("keydown", downstream, true);
-  document.addEventListener("keyup", downstream, true);
-  try {
-    for (const type of ["keydown", "keyup"]) {
-      const event = new KeyboardEvent(type, { key: "Tab", shiftKey: true, repeat: true, bubbles: true, cancelable: true });
-      expect(general.dispatchEvent(event)).toBe(false);
-      expect(event.defaultPrevented).toBe(true);
-    }
-    expect(downstream).not.toHaveBeenCalled();
-  } finally {
-    document.removeEventListener("keydown", downstream, true);
-    document.removeEventListener("keyup", downstream, true);
-  }
-
-  await user.keyboard("{ArrowRight}");
-  expect(screen.getByRole("tab", { name: /^Usage$/ })).toHaveAttribute("data-state", "active");
+  general.focus(); await user.tab(); expect(general).not.toHaveFocus();
+  handlers.get("panel-shortcut-dismiss")?.();
+  expect(api.hidePanelFromShortcut).not.toHaveBeenCalled();
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(settings).toHaveFocus();
-  unmount();
-  expect(window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", cancelable: true }))).toBe(true);
+  api.hidePanelFromShortcut.mockClear();
+  handlers.get("panel-shortcut-dismiss")?.();
+  expect(api.hidePanelFromShortcut).toHaveBeenCalledTimes(1);
 });
 
 describe("workspace flow", () => {
@@ -136,7 +121,7 @@ describe("workspace flow", () => {
     api.codexProfiles.mockResolvedValueOnce(inactive).mockResolvedValue(active);
     api.activateCodexProfile.mockResolvedValue(active);
     render(<App />);
-    expect(await screen.findByText("Choose an account’s switch button to activate it in Codex.")).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Switch to Work account" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Switch to Work account" }));
     expect(api.activateCodexProfile).toHaveBeenCalledWith(work.id);
     expect(api.scheduleCodexRestart).not.toHaveBeenCalled();
@@ -197,7 +182,7 @@ describe("workspace flow", () => {
     expect(api.commitAccountSetup).not.toHaveBeenCalled();
   });
 
-  it("rejects a manually imported account that is already saved", async () => {
+  it("shows an already saved import as added without an error or duplicate save", async () => {
     const user = userEvent.setup();
     api.importSetupAccount.mockResolvedValue({ ...stagedCodex, alreadyAdded: true });
     render(<App />);
@@ -205,9 +190,36 @@ describe("workspace flow", () => {
     await fileMethod(user);
     await uploadAuth(user, '{"tokens":{"access_token":"synthetic"}}');
     await user.click(screen.getByRole("button", { name: "Verify account" }));
-    expect(await findErrorToast("This account is already added to Orbilap.")).toBeInTheDocument();
+    expect(await screen.findByText("This account is already added to Orbilap.")).toBeVisible();
+    expect(screen.queryByText("Added")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verification failed")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-sonner-toast]" )).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verify account" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Add accounts" })).not.toBeInTheDocument();
     expect(api.commitAccountSetup).not.toHaveBeenCalled();
+  });
+
+  it("continues with new accounts while saved and repeated identities remain informational", async () => {
+    const user = userEvent.setup();
+    api.importSetupAccount.mockResolvedValueOnce({ ...stagedCodex, alreadyAdded: true })
+      .mockResolvedValueOnce({ ...stagedCodex, id: "new-account" })
+      .mockResolvedValueOnce({ ...stagedCodex, id: "new-account" });
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Add account" }));
+    await fileMethod(user);
+    await user.upload(screen.getByLabelText("Choose auth.json file"), [
+      new File(['{"id":1}'], "saved.json"), new File(['{"id":2}'], "new.json"), new File(['{"id":3}'], "repeat.json"),
+    ]);
+    await screen.findByText("3 files");
+    await user.click(screen.getByRole("button", { name: "Verify accounts" }));
+    expect(await screen.findByText("This account is already in the import list.")).toBeVisible();
+    expect(screen.getByText("This account is already added to Orbilap.")).toBeVisible();
+    expect(screen.queryByText("Added")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verification failed")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-sonner-toast]")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue with 1 account" }));
+    await waitFor(() => expect(api.commitAccountSetup).toHaveBeenCalledExactlyOnceWith("draft", studio.name, studio.accent, ["new-account"], studio.id));
+    expect(api.importSetupAccount).toHaveBeenCalledTimes(3);
   });
 
   it("ignores a local discovery response after choosing a different provider", async () => {
@@ -578,7 +590,7 @@ describe("limit countdown and quick switching", () => {
     api.getState.mockImplementation(() => new Promise(() => {}));
     await act(async () => switched({ payload: work.id }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
-    await user.click(await screen.findByRole("tab", { name: "Menu bar" }));
+    await user.click(await screen.findByRole("tab", { name: "Display" }));
     expect(screen.getByLabelText("Menu bar active account")).toHaveTextContent(work.name);
   });
 
@@ -719,7 +731,7 @@ describe("settings and refresh", () => {
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await screen.findByRole("tab", { name: "General" });
-    for (const name of ["General", "Usage", "Menu bar"]) expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    for (const name of ["General", "Usage", "Display"]) expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Usage" }));
     await user.click(screen.getByRole("switch", { name: "Show reset updates" }));
     expect(api.updateWorkspace).toHaveBeenCalledWith(expect.objectContaining({ id: "studio", usage: expect.objectContaining({ showCodexResets: false }) }));
@@ -731,7 +743,7 @@ describe("settings and refresh", () => {
     api.updateWorkspace.mockImplementation(async workspace => savedState([workspace]));
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Settings" }));
-    expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["General", "Usage", "Menu bar", "Updates"]);
+    expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["General", "Usage", "Display", "Updates"]);
     expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("combobox", { name: "Workspace" }));
@@ -1007,12 +1019,17 @@ describe("settings and refresh", () => {
     await user.click(await screen.findByRole("button", { name: "Settings" }));
     for (const name of ["General", "Updates"]) expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Alerts" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Display" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Display" })).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: "Color theme" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
-    await user.click(screen.getByRole("tab", { name: "Menu bar" }));
+    await user.click(screen.getByRole("tab", { name: "Display" }));
     expect(screen.getByRole("switch", { name: "Menu bar usage" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Floating" })).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Show floating usage" })).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Show Claude in floating" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Mini" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Full card" })).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   });
 
@@ -1357,4 +1374,26 @@ it("returns to setup after deleting the last workspace without removing saved ac
   expect(api.removeWorkspaceAccount).not.toHaveBeenCalled();
   expect(api.removeCodexProfile).not.toHaveBeenCalled();
   expect(api.activateCodexProfile).not.toHaveBeenCalled();
+});
+
+it("guides an unread update from the home gear to Updates without downloading", async () => {
+  const update = { version: "9.9.9", body: "A sample release.", download: vi.fn(), install: vi.fn() };
+  appUpdates.check.mockResolvedValue(update);
+  const user = userEvent.setup();
+  render(<App />);
+  const settings = await screen.findByRole("button", { name: "Settings · Update available" });
+  expect(settings.querySelector(".update-dot")).not.toBeNull();
+  await user.click(settings);
+  expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tab", { name: "Updates · Update available" }).querySelector(".update-dot")).not.toBeNull();
+  await user.keyboard("{Escape}");
+  await user.click(await screen.findByRole("button", { name: "Settings · Update available" }));
+  await user.click(screen.getByRole("tab", { name: "Updates · Update available" }));
+  expect(await screen.findByRole("button", { name: "Download update" })).toBeVisible();
+  await waitFor(() => expect(screen.getByRole("tab", { name: "Updates" }).querySelector(".update-dot")).toBeNull());
+  expect(screen.getByText("Version 9.9.9")).toBeVisible();
+  expect(update.download).not.toHaveBeenCalled();
+  expect(update.install).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  expect(await screen.findByRole("button", { name: "Settings" })).toBeVisible();
 });

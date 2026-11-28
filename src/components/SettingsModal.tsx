@@ -12,7 +12,7 @@ import {
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { prettyError, quitApp, setAppSettings, setSettings } from "../api";
-import { DEFAULT_APP_SETTINGS, type AppSettings, type AppState, type CodexProfilesState, type ClaudeProfile } from "../types";
+import { DEFAULT_APP_SETTINGS, DEFAULT_FLOATING_USAGE, DEFAULT_PANEL_SHORTCUT, type AppSettings, type AppState, type CodexProfilesState, type ClaudeProfile } from "../types";
 import {
   applyDisplayPrefs,
   DEFAULT_DISPLAY_PREFS,
@@ -28,8 +28,12 @@ import { AppLogo } from "../logos";
 import { DownloadIcon, LogoutIcon, RefreshIcon, ResetIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { WorkspaceSettings } from "./WorkspaceSettings";
 import { ReleaseNotesDialog } from "./ReleaseNotesDialog";
+import { FloatingUsageSettings } from "./FloatingUsageSettings";
+import { PanelShortcutSettings } from "./PanelShortcutSettings";
+import { UpdateDot } from "./ui/update-dot";
+import { loadSeenUpdates, saveSeenUpdates } from "../updateNotices";
 
-type OfferedUpdate = Pick<Update, "version" | "body" | "download" | "install"> & { preview?: true };
+type OfferedUpdate = Pick<Update, "version" | "body" | "download" | "install"> & Partial<Pick<Update, "close">> & { preview?: true };
 
 const previewDelay = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 const previewUpdate: OfferedUpdate | null = import.meta.env.DEV && import.meta.env.VITE_ORBILAP_PREVIEW_UPDATE === "1"
@@ -86,13 +90,14 @@ interface SettingsModalProps {
   /** Frontend-only display prefs, lifted to App so the list reacts instantly. */
   display?: DisplayPrefs;
   onDisplayChanged?: (d: DisplayPrefs) => void;
+  onUpdateUnreadChange?: (unread: boolean) => void;
 }
 
 type SettingsTab = "general" | "usage" | "menu-bar" | "updates";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "usage", label: "Usage" },
-  { id: "menu-bar", label: "Menu bar" },
+  { id: "menu-bar", label: "Display" },
   { id: "updates", label: "Updates" },
 ];
 
@@ -111,13 +116,24 @@ export function SettingsModal({
   notify,
   display: displayProp,
   onDisplayChanged,
+  onUpdateUnreadChange,
 }: SettingsModalProps) {
   const app = state?.app;
   const workspace = app?.workspaces?.find((item) => item.id === app.activeWorkspaceId);
   const tabs = SETTINGS_TABS.filter(({ id }) => workspace || id === "general" || id === "updates");
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [shortcutEditing, setShortcutEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<UpdatePhase>({ kind: "idle" });
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  const mounted = useRef(true);
+  const offeredResource = useRef<OfferedUpdate | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; void offeredResource.current?.close?.().catch(() => {}); };
+  }, []);
+  const [seenVersions, setSeenVersions] = useState<string[]>(() => previewUpdate ? [] : loadSeenUpdates());
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [tab, setTab] = useState<SettingsTab>("general");
   const saving = busy || workspaceBusy;
@@ -150,11 +166,25 @@ export function SettingsModal({
 
   useEffect(() => {
     if (!open) return;
-    setTab("general");
     getVersion()
       .then((v) => setCurrentVersion(v))
       .catch(() => setCurrentVersion(null));
   }, [open]);
+
+  const offeredVersion = "update" in phase ? phase.update.version : null;
+  const updateUnread = !!offeredVersion && !seenVersions.includes(offeredVersion);
+  useEffect(() => { onUpdateUnreadChange?.(updateUnread); }, [onUpdateUnreadChange, updateUnread]);
+  // A closed sheet or its General tab never acknowledges an unseen release.
+  useEffect(() => {
+    if (!open || tab !== "updates" || !state?.app || !offeredVersion || seenVersions.includes(offeredVersion)) return;
+    // Let the committed tab paint before acknowledging; closing cancels it.
+    const frame = requestAnimationFrame(() => {
+      const next = [...seenVersions, offeredVersion];
+      if (!previewUpdate) saveSeenUpdates(next);
+      setSeenVersions(next);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, tab, state?.app, offeredVersion, seenVersions]);
 
   const updatePrefs = useCallback(
     async (partial: Partial<AppSettings>) => {
@@ -192,48 +222,52 @@ export function SettingsModal({
     if (updateBusy.current) return;
     updateBusy.current = true;
     lastAttempt.current = Date.now();
-    setPhase({ kind: "checking" });
+    const previous = phaseRef.current;
+    if (!automatic || !("update" in previous)) setPhase({ kind: "checking" });
     if (!automatic) notify("Checking for updates…");
     const request: Promise<OfferedUpdate | null> = previewUpdate
-      ? previewDelay(450).then(() => previewUpdate) : check();
-    void request.then(async (found) => {
+      ? previewDelay(450).then(() => previewUpdate) : check({ timeout: 15_000 });
+    void request.then((found) => {
+      if (!mounted.current) { void found?.close?.().catch(() => {}); return; }
+      if (offeredResource.current !== found) void offeredResource.current?.close?.().catch(() => {});
+      offeredResource.current = found;
       if (!previewUpdate) {
         try { localStorage.setItem("orbilap.lastUpdateCheck", new Date().toISOString()); } catch { /* Optional history. */ }
       }
       if (!found || (automatic && found.version === skippedVersion())) {
+        void found?.close?.().catch(() => {});
+        offeredResource.current = null;
         setPhase({ kind: "current" });
         if (!automatic) notify("You're on the latest version.", "ok");
         return;
       }
       setPhase({ kind: "available", update: found });
-      notify(`${import.meta.env.DEV && found.preview ? "Preview version" : "Version"} ${found.version} is available`, "ok");
-      if (automatic) {
-        setPhase({ kind: "downloading", update: found, progress: null });
-        await downloadUpdate(found, (progress) => setPhase({ kind: "downloading", update: found, progress }));
-        setPhase({ kind: "downloaded", update: found });
-        notify(`Version ${found.version} downloaded`, "ok");
-      }
+      if (!automatic) notify(`${import.meta.env.DEV && found.preview ? "Preview version" : "Version"} ${found.version} is available`, "ok");
     }).catch((e) => {
-      const message = prettyError(e); setPhase({ kind: "failed" }); notify(message, "err");
+      if (!mounted.current) return;
+      setPhase(automatic && "update" in previous ? previous : { kind: "failed" });
+      if (!automatic) notify(prettyError(e), "err");
     }).finally(() => { updateBusy.current = false; });
   }, [notify]);
 
   // This component remains mounted while Settings and the tray are closed.
   useEffect(() => {
-    if (previewUpdate || !display.checkUpdatesOnLaunch) return;
+    if (!previewUpdate && !display.checkUpdatesOnLaunch) return;
     const dailyCheck = () => {
-      if (updateBusy.current || phase.kind === "available" || phase.kind === "downloaded" || phase.kind === "installing") return;
-      let checked = 0;
-      try { checked = Date.parse(localStorage.getItem("orbilap.lastUpdateCheck") ?? "") || 0; } catch { /* Optional history. */ }
-      if (Date.now() - Math.max(checked, lastAttempt.current) >= 86_400_000) checkNow(true);
+      const current = phaseRef.current;
+      if (updateBusy.current || current.kind === "downloaded" || current.kind === "installing" || current.kind === "preview-installed") return;
+      // Revalidate on each app launch, then once a day, even with Settings closed.
+      if (!lastAttempt.current || Date.now() - lastAttempt.current >= 86_400_000) checkNow(true);
     };
     dailyCheck(); const timer = window.setInterval(dailyCheck, 60_000);
     return () => window.clearInterval(timer);
-  }, [display.checkUpdatesOnLaunch, checkNow, phase.kind]);
+  }, [display.checkUpdatesOnLaunch, checkNow]);
 
   const skipVersion = useCallback(
     (version: string) => {
       if (!previewUpdate) setSkippedVersion(version);
+      void offeredResource.current?.close?.().catch(() => {});
+      offeredResource.current = null;
       setPhase({ kind: "current" });
       notify(`Version ${version} skipped`, "ok");
     },
@@ -271,7 +305,7 @@ export function SettingsModal({
   const resetAll = useCallback(() => {
     // Reset global preferences without replacing workspace membership or policies.
     void updatePrefs({ refreshIntervalSecs: DEFAULT_APP_SETTINGS.refreshIntervalSecs,
-      usageShowRemaining: DEFAULT_APP_SETTINGS.usageShowRemaining }).then((saved) => {
+      usageShowRemaining: DEFAULT_APP_SETTINGS.usageShowRemaining, panelShortcut: DEFAULT_PANEL_SHORTCUT, floatingUsage: DEFAULT_FLOATING_USAGE }).then((saved) => {
       if (!saved) return;
       setDisplay(resetDisplayPrefs()); setDisplayState({ ...DEFAULT_DISPLAY_PREFS });
       notify("Settings reset to defaults", "ok");
@@ -292,6 +326,7 @@ export function SettingsModal({
         onClose={onClose}
         title="Settings"
         busy={saving}
+        hasUnsavedChanges={shortcutEditing}
         cardClass={`settings-card workspace-settings-card ${keyboardNavigation ? "is-keyboard" : "is-pointer"}`}
         bodyId="settings-body"
         navigation={
@@ -308,8 +343,9 @@ export function SettingsModal({
               onKeyDownCapture={() => setKeyboardNavigation(true)}
             >
               {tabs.map(({ id, label }) => (
-                <TabsTrigger key={id} value={id} className="settings-tab" disabled={saving}>
-                  {label}
+                <TabsTrigger key={id} value={id} className="settings-tab" disabled={saving}
+                  aria-label={id === "updates" && updateUnread ? "Updates · Update available" : undefined}>
+                  <span className="settings-tab-label">{label}{id === "updates" && updateUnread ? <UpdateDot /> : null}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -324,7 +360,7 @@ export function SettingsModal({
             onPointerDownCapture={() => setKeyboardNavigation(false)}
             onKeyDownCapture={() => setKeyboardNavigation(true)}
           >
-            {workspace ? <WorkspaceSettings key={workspace.id} open={open} workspace={workspace} state={state} profiles={profiles} claudeAccounts={claudeAccounts} onChanged={onChanged} onBusyChange={setWorkspaceBusy} /> : null}
+            {workspace ? <WorkspaceSettings key={workspace.id} open={open} workspace={workspace} state={state} profiles={profiles} claudeAccounts={claudeAccounts} onChanged={onChanged} onBusyChange={setWorkspaceBusy} floatingSettings={(availableProviders, activeAccounts, activeAccountNames) => <FloatingUsageSettings workspaceId={workspace.id} activeAccounts={activeAccounts} activeAccountNames={activeAccountNames} availableProviders={availableProviders} preferences={app.floatingUsage ?? DEFAULT_FLOATING_USAGE} disabled={saving} onSave={floatingUsage => void updatePrefs({ floatingUsage })} />} /> : null}
             <TabsContent value="general" className="settings-panel settings-general">
               <section
                 className="settings-section settings-group"
@@ -349,12 +385,12 @@ export function SettingsModal({
                   />
                 </Row>
               </section>
+              <PanelShortcutSettings preferences={app.panelShortcut ?? DEFAULT_PANEL_SHORTCUT} active={open && tab === "general"}
+                disabled={saving} registrationError={state.panelShortcutError} onEditingChange={setShortcutEditing}
+                onSave={panelShortcut => updatePrefs({ panelShortcut })} />
               <section className="settings-section settings-choice" aria-labelledby="refresh-interval-label">
                 <div className="settings-choice-heading">
                   <h3 id="refresh-interval-label">Refresh interval</h3>
-                  <p id="refresh-interval-help" className="setting-note">
-                    Refreshes account usage while the panel is open.
-                  </p>
                 </div>
                 <RefreshInterval
                   value={app.refreshIntervalSecs}
@@ -398,26 +434,6 @@ export function SettingsModal({
                   )}
                 </ToggleGroup>
               </section>
-              <section className="settings-section settings-choice" aria-labelledby="deadline-display-label">
-                <h3 id="deadline-display-label">Deadline display</h3>
-                <ToggleGroup type="single" disabled={saving} className="segmented ios-segments theme-segments"
-                  aria-labelledby="deadline-display-label" value={display.deadlineDisplay}
-                  style={segmentStyle(2, display.deadlineDisplay === "date" ? 1 : 0, keyboardNavigation)}
-                  onValueChange={value => { if (value === "remaining" || value === "date") setDisplay({ ...display, deadlineDisplay: value }); }}>
-                  <ToggleGroupItem value="remaining" className="segment">Time remaining</ToggleGroupItem>
-                  <ToggleGroupItem value="date" className="segment">Date &amp; time</ToggleGroupItem>
-                </ToggleGroup>
-              </section>
-              <section className="settings-section settings-choice" aria-labelledby="time-format-label">
-                <h3 id="time-format-label">Clock format</h3>
-                <ToggleGroup type="single" disabled={saving} className="segmented ios-segments theme-segments"
-                  aria-labelledby="time-format-label" value={display.timeFormat}
-                  style={segmentStyle(2, display.timeFormat === "12h" ? 1 : 0, keyboardNavigation)}
-                  onValueChange={value => { if (value === "24h" || value === "12h") setDisplay({ ...display, timeFormat: value }); }}>
-                  <ToggleGroupItem value="24h" className="segment">24-hour</ToggleGroupItem>
-                  <ToggleGroupItem value="12h" className="segment">AM/PM</ToggleGroupItem>
-                </ToggleGroup>
-              </section>
               <div className="settings-footer">
                 <Button
                   type="button"
@@ -446,9 +462,9 @@ export function SettingsModal({
                 />
               </section>
               <section className="settings-section settings-group">
-                <Row name="Automatic updates">
+                <Row name="Check for updates automatically">
                   <Toggle
-                    label="Automatic updates"
+                    label="Check for updates automatically"
                     selected={display.checkUpdatesOnLaunch}
                     onChange={(v) =>
                       setDisplay({ ...display, checkUpdatesOnLaunch: v })
@@ -632,7 +648,6 @@ function RefreshInterval({
       className="segmented ios-segments refresh-segments"
       style={segmentStyle(options.length, options.indexOf(value))}
       aria-label="Refresh interval"
-      aria-describedby="refresh-interval-help"
       value={String(value)}
       disabled={disabled}
       onValueChange={(preset) => {

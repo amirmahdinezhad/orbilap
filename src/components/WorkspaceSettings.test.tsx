@@ -45,7 +45,7 @@ it("starts switching at 2% remaining and saves a custom threshold", async () => 
 });
 it("chooses provider before limit switches and keeps color warnings independent of notifications", async () => {
   const user = userEvent.setup(); show("menu-bar");
-  await user.click(screen.getByRole("switch", { name: "Change colors near limits" }));
+  await user.click(screen.getByRole("switch", { name: "Limit colors" }));
   expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({ usage: expect.objectContaining({ warningColors: true }) }));
   await user.click(screen.getByRole("switch", { name: "Show Claude in menu bar" }));
   expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({ usage: expect.objectContaining({ menuBarProviders: ["codex", "claude"], displayMode: "active" }) }));
@@ -65,6 +65,7 @@ it("saves Antigravity rotation separately from the Codex cycle", async () => {
 
 it("saves initials per workspace using the switch in Appearance", async () => {
   const user = userEvent.setup(); show("menu-bar");
+  await user.click(screen.getByRole("button", { name: "Appearance" }));
   const toggle = screen.getByRole("switch", { name: "Show account initials" });
   expect(toggle).toBeChecked();
   await user.click(toggle);
@@ -81,49 +82,40 @@ it("removes alert controls and saves the Codex section reset toggle", async () =
   expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({usage: expect.objectContaining({showCodexResets:false})}));
 });
 
-it("keeps usage policy separate from menu-bar presentation and explains reset predictions", async () => {
+it("keeps usage policy separate from menu-bar presentation without a separate prediction control", async () => {
   const user = userEvent.setup(); show("usage");
   expect(screen.getByRole("radio", {name:"Remaining"})).toBeChecked();
   expect(screen.getByRole("switch", {name:"Show reset updates"})).toBeChecked();
-  expect(screen.getByRole("checkbox", {name:"Include predictions"})).toBeChecked();
-  expect(screen.getByRole("checkbox", {name:"Include predictions"})).toHaveAccessibleDescription("Estimates only. Resets aren’t guaranteed.");
+  expect(screen.queryByRole("checkbox", {name:"Include predictions"})).not.toBeInTheDocument();
   expect(screen.queryByRole("switch", {name:"Menu bar usage"})).not.toBeInTheDocument();
-  expect(screen.queryByRole("switch", {name:"Change colors near limits"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", {name:"Limit colors"})).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox", {name:"Menu bar provider"})).not.toBeInTheDocument();
-  await user.click(screen.getByRole("checkbox", {name:"Include predictions"}));
-  expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({usage:expect.objectContaining({showProbableResets:false})}));
   await user.click(screen.getByRole("tab", {name:"Menu bar"}));
   expect(screen.queryByRole("switch", {name:"Show reset updates"})).not.toBeInTheDocument();
   expect(screen.getByRole("switch", {name:"Menu bar usage"})).toBeChecked();
-  expect(screen.getByRole("switch", {name:"Change colors near limits"})).toBeInTheDocument();
+  expect(screen.getByRole("switch", {name:"Limit colors"})).toBeInTheDocument();
 });
 
-it("restores color details only when enabled and saves each level without alerts", async () => {
-  const user = userEvent.setup(); show("menu-bar", {...workspace.usage, warningColors:true});
-  for (const level of [75,90,95]) expect(screen.getByRole("switch",{name:`Change color at ${level}% used`})).toBeChecked();
-  expect(screen.getByRole("switch",{name:"Change color at 75% used"})).toHaveAccessibleDescription("Warning");
-  await user.click(screen.getByRole("switch",{name:"Change color at 95% used"}));
-  expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({usage:expect.objectContaining({warningThresholds:[75,90],warningColors:true})}));
-  expect(screen.queryByRole("switch",{name:"Workspace alerts"})).not.toBeInTheDocument();
+it("uses one accessible limit-color toggle without threshold controls", async () => {
+  const user = userEvent.setup(); show("menu-bar", {...workspace.usage, warningColors:true, warningThresholds:[55,75,90,95]});
+  const toggle = screen.getByRole("switch", {name:"Limit colors"});
+  expect(toggle).toBeChecked();
+  expect(toggle).toHaveAccessibleDescription("Turn red below 15% remaining.");
+  expect(toggle.closest("details")).toBeNull();
+  expect(screen.queryByRole("group", {name:"Color thresholds"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", {name:/Change color at/})).not.toBeInTheDocument();
+  toggle.focus(); await user.keyboard(" ");
+  expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({usage:expect.objectContaining({warningColors:false})}));
 });
-it("preserves all-disabled levels and hides saved color details while the master is off", async () => {
+it("can enable fixed red warnings even with legacy disabled thresholds", async () => {
   const user = userEvent.setup(); show("menu-bar", {...workspace.usage, warningColors:false,warningThresholds:[]});
-  expect(screen.queryByRole("group",{name:"Color thresholds"})).not.toBeInTheDocument();
-  await user.click(screen.getByRole("switch",{name:"Change colors near limits"}));
+  await user.click(screen.getByRole("switch",{name:"Limit colors"}));
   expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({usage:expect.objectContaining({warningColors:true,warningThresholds:[]})}));
-});
-it("removes custom thresholds and drops legacy custom levels when a preset changes", async () => {
-  const user = userEvent.setup(); show("menu-bar", {...workspace.usage,warningColors:true,warningThresholds:[55,75,90,95]});
-  expect(screen.queryByText("Custom threshold")).not.toBeInTheDocument();
-  expect(screen.queryByRole("spinbutton",{name:"Custom color threshold"})).not.toBeInTheDocument();
-  expect(screen.queryByRole("switch",{name:"Change color at 55% used"})).not.toBeInTheDocument();
-  const level = screen.getByRole("switch",{name:"Change color at 95% used"});
-  level.focus(); await user.keyboard(" ");
-  expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({usage:expect.objectContaining({warningThresholds:[75,90]})}));
 });
 
  it("offers visual radio choices with keyboard activation and preserves other usage settings", async () => {
   const user = userEvent.setup(); show("menu-bar");
+  await user.click(screen.getByRole("button", { name: "Appearance" }));
   expect(screen.getByRole("radio", {name:"Reset timeline"})).toBeChecked();
   screen.getByRole("radio", {name:"Progress bars"}).focus(); await user.keyboard(" ");
   await waitFor(() => expect(api.updateWorkspace).toHaveBeenCalled());
@@ -132,7 +124,7 @@ it("removes custom thresholds and drops legacy custom levels when a preset chang
 it("hides dependent controls when menu bar usage is disabled", () => {
   show("menu-bar", {...workspace.usage, menuBarEnabled:false});
   expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-  expect(screen.queryByRole("switch", {name:"Change colors near limits"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", {name:"Limit colors"})).not.toBeInTheDocument();
 });
 
 it("saves the usage direction with keyboard activation and retains focus", async () => {
@@ -149,10 +141,9 @@ it("preserves the saved prediction preference while reset updates are hidden", a
   expect(api.updateWorkspace).toHaveBeenCalledWith(expect.objectContaining({ usage: expect.objectContaining({ showCodexResets: false, showProbableResets: true }) }));
 });
 
-it("disables predictions while resets are hidden and retains the saved preference", () => {
-  show("usage", { ...workspace.usage, showCodexResets: false, showProbableResets: true });
-  expect(screen.getByRole("checkbox", { name: "Include predictions" })).toBeChecked();
-  expect(screen.getByRole("checkbox", { name: "Include predictions" })).toBeDisabled();
+it("has no prediction control even for an old disabled preference", () => {
+  show("usage", { ...workspace.usage, showCodexResets: false, showProbableResets: false });
+  expect(screen.queryByRole("checkbox", { name: "Include predictions" })).not.toBeInTheDocument();
 });
 
 it("reports reset save errors without changing the selected preference", async () => {
@@ -165,13 +156,50 @@ it("reports reset save errors without changing the selected preference", async (
 });
 
 
-it("toggles predictions from its caption and checkbox", async () => {
-  const user = userEvent.setup(); show("usage");
-  const checkbox = screen.getByRole("checkbox", { name: "Include predictions" });
-  expect(checkbox.closest("label")).not.toBeNull();
-  await user.click(screen.getByText("Include predictions", { exact: true }));
-  expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({ usage: expect.objectContaining({ showProbableResets: false }) }));
-  await user.click(checkbox);
-  expect(api.updateWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({ usage: expect.objectContaining({ showProbableResets: false }) }));
-  expect(api.updateWorkspace).toHaveBeenCalledTimes(2);
+it('offers floating only providers with a real active account in this workspace',async()=>{
+ api.antigravityAccounts.mockResolvedValue([{id:'google',name:'Google',provider:'antigravity',active:true}]);
+ const current={...workspace,usage:{...workspace.usage,activeAccounts:{claude:'claude'}}};
+ const state=makeState();const floating=vi.fn(()=>null);
+ const props={open:true,workspace:current,state,profiles:{profiles:[codex],activeProfileId:codex.id,canImport:true,switchError:null},claudeAccounts:[claude],onBusyChange:vi.fn(),onChanged:vi.fn(),floatingSettings:floating};
+ const v=render(<Tabs defaultValue="menu-bar"><WorkspaceSettings {...props}/></Tabs>);
+ await waitFor(()=>expect(floating).toHaveBeenLastCalledWith(['codex','antigravity'],{codex:'codex',antigravity:'google'},{codex:codex.name,antigravity:'Google'}));
+ v.rerender(<Tabs defaultValue="menu-bar"><WorkspaceSettings {...props} profiles={{...props.profiles,profiles:[{...codex,active:false}]}} claudeAccounts={[{...claude,active:true}]}/></Tabs>);
+ expect(floating).toHaveBeenLastCalledWith(['claude','antigravity'],{claude:'claude',antigravity:'google'},{claude:claude.name,antigravity:'Google'});
+ v.rerender(<Tabs defaultValue="menu-bar"><WorkspaceSettings {...props} workspace={{...current,antigravityAccountIds:undefined}}/></Tabs>);
+ expect(floating).toHaveBeenLastCalledWith(['codex'],{codex:'codex'},{codex:codex.name});
+ v.rerender(<Tabs defaultValue="menu-bar"><WorkspaceSettings {...props} workspace={{...current,accountIds:[],antigravityAccountIds:[]}}/></Tabs>);
+ expect(floating).toHaveBeenLastCalledWith([],{},{});
+});
+
+it("shows both display sections without nested navigation or preference writes", async () => {
+  const user = userEvent.setup();
+  const state = makeState();
+  const floating = <section aria-label="Floating preview"><input aria-label="Unsaved preview value" defaultValue="Keep me" /></section>;
+  render(<Tabs defaultValue="menu-bar"><WorkspaceSettings open workspace={workspace} state={state}
+    profiles={{ profiles: [codex], activeProfileId: codex.id, canImport: true, switchError: null }}
+    onBusyChange={vi.fn()} onChanged={vi.fn()} floatingSettings={() => floating} /></Tabs>);
+  const menu = screen.getByRole("switch", { name: "Menu bar usage" });
+  expect(menu).toBeVisible();
+  expect(screen.getByRole("region", { name: "Floating preview" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Menu bar" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Floating" })).toBeVisible();
+  expect(screen.queryByRole("radiogroup", { name: "Display location" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("radio", { name: "Floating" })).not.toBeInTheDocument();
+  const input = screen.getByRole("textbox", { name: "Unsaved preview value" });
+  await user.clear(input);
+  await user.type(input, "Preserved");
+  await user.click(screen.getByLabelText("Appearance"));
+  expect(menu).toBeVisible();
+  expect(screen.getByRole("textbox", { name: "Unsaved preview value" })).toBe(input);
+  expect(input).toHaveValue("Preserved");
+  expect(api.updateWorkspace).not.toHaveBeenCalled();
+});
+
+it("starts secondary menu bar settings closed while keeping their saved summaries", () => {
+  show("menu-bar", { ...workspace.usage, menuBarStyle: "progress", warningColors: true });
+  const appearance = screen.getByRole("button", { name: "Appearance" });
+  expect(appearance).toHaveAttribute("aria-expanded", "false");
+  expect(appearance).toHaveTextContent("Progress bars");
+  expect(screen.getByRole("switch", {name:"Limit colors"})).toBeVisible();
+  expect(screen.getByRole("figure", { name: "Menu bar preview · Sample usage" })).toBeVisible();
 });

@@ -161,7 +161,7 @@ describe("UsageModal", () => {
     expect(screen.queryByText("gpt-reserve")).not.toBeInTheDocument();
   });
 
-  it.each([[93.5, 7], [93.51, 6], [99.5, 1], [100, 0], [0, 100]])(
+  it.each([[93.5, 7], [93.51, 6], [99.5, 1], [99.51, 1], [99.9, 1], [99.999, 1], [100, 0], [0, 100]])(
     "matches Codex rounding for %s%% used",
     async (percent, remaining) => {
       mockQuotas.mockResolvedValue([{ provider: "codex", windows: [{ window: "5-hour", percent }] }]);

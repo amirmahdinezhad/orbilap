@@ -6,6 +6,16 @@ import { DEFAULT_WORKSPACE_USAGE } from "../types";
 const workspace={id:"one",name:"Person",accent:"#007aff",accountIds:[],usage:DEFAULT_WORKSPACE_USAGE};
 const props=()=>({workspace,workspaces:[workspace],workspaceBusy:false,refreshing:false,updatedAt:"2026-11-04T10:00:00Z",onSelect:vi.fn(),onRefresh:vi.fn(),onQuit:vi.fn(),onCreate:vi.fn(),onRenameWorkspace:vi.fn(),addBusy:false,onAdd:vi.fn(),onSettings:vi.fn()});
 afterEach(cleanup);
+it("shows a static accessible unread update marker without changing the settings action", async () => {
+  const base = props(), user = userEvent.setup();
+  const view = render(<HomeHeader {...base} updateUnread />);
+  const settings = screen.getByRole("button", { name: "Settings · Update available" });
+  expect(settings.querySelector(".update-dot")).toHaveAttribute("aria-hidden", "true");
+  await user.click(settings);
+  expect(base.onSettings).toHaveBeenCalledOnce();
+  view.rerender(<HomeHeader {...base} updateUnread={false} />);
+  expect(screen.getByRole("button", { name: "Settings" }).querySelector(".update-dot")).toBeNull();
+});
 it("keeps routine freshness out of the header and offers it on the refresh control",async()=>{
   const base=props(),user=userEvent.setup();render(<HomeHeader {...base} />);
   expect(screen.queryByText(/Updated|last checked/)).not.toBeInTheDocument();

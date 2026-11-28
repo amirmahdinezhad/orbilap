@@ -69,13 +69,13 @@ it("shows the live active account, no switch action for the live account, and on
 it("shows one provider reset outside account cards and stops polling when disabled", async () => {
   const { WorkspaceAccounts } = await import("./WorkspaceAccounts");
   const { DEFAULT_APP_SETTINGS, DEFAULT_WORKSPACE_USAGE } = await import("../types");
-  resetStatus.mockResolvedValue({generatedAt: new Date().toISOString(), latestReset:{id:"reset",resetType:"regular",announcedAt:new Date(Date.now()-60_000).toISOString()}, scheduledReset:null,activeWatch:null});
+  resetStatus.mockResolvedValue({generatedAt: new Date().toISOString(), latestReset:{id:"reset",resetType:"regular",announcedAt:new Date(Date.now()-60_000).toISOString()}, scheduledReset:{resetType:"regular",announcedAt:new Date(Date.now()-60_000).toISOString(),scheduledFor:new Date(Date.now()+3600_000).toISOString()},activeWatch:null});
   const workspace = {id:"studio",name:"Studio",accent:"#007aff",accountIds:["a","b"],usage:{...DEFAULT_WORKSPACE_USAGE}};
   const props = {workspace,app:DEFAULT_APP_SETTINGS,profiles:{profiles:[{...profile("a"),active:true},{...profile("b"),active:true}],activeProfileId:"a",canImport:true,switchError:null},quotas:ready("a","b"),busy:false,onManage:vi.fn(),onActivate:vi.fn()};
   const view = render(<WorkspaceAccounts {...props} />);
   const notice = await screen.findByLabelText("Codex reset outlook");
   expect(notice.closest("article")).toBeNull();
-  expect(screen.getAllByText("Reset confirmed")).toHaveLength(1);
+  expect(screen.getAllByText("Resets in 1h 00m")).toHaveLength(1);
   const calls = resetStatus.mock.calls.length;
   view.rerender(<WorkspaceAccounts {...props} workspace={{...workspace,usage:{...workspace.usage,showCodexResets:false}}} />);
   expect(screen.queryByLabelText("Codex reset outlook")).not.toBeInTheDocument();
@@ -137,6 +137,13 @@ it("keeps account identity behind the card skeleton until the entire batch is re
   expect(screen.getByLabelText("Loading accounts")).toBeInTheDocument();expect(screen.queryByRole("article")).not.toBeInTheDocument();
   view.rerender(<WorkspaceAccounts {...props} quotas={{a,b:{provider:"codex"}}} />);
   expect(screen.queryByLabelText("Loading accounts")).not.toBeInTheDocument();expect(screen.getAllByRole("article")).toHaveLength(2);
+  expect(screen.getByRole("img", { name: "1 banked reset available" }).closest("article")).toHaveAccessibleName("a account");
+  expect(screen.queryByRole("img", { name: "0 banked resets available" })).not.toBeInTheDocument();
+  view.rerender(<WorkspaceAccounts {...props} quotas={{a:{...a,resetCredits:{availableCount:3,planType:"plus"}},b:{provider:"codex"}}} />);
+  expect(screen.getByRole("img", { name: "3 banked resets available" })).toBeVisible();
+  expect(screen.queryByRole("img", { name: "1 banked reset available" })).not.toBeInTheDocument();
+  view.rerender(<WorkspaceAccounts {...props} quotas={{a:{...a,resetCredits:{availableCount:0,planType:"plus"}},b:{provider:"codex"}}} />);
+  expect(screen.queryByRole("img", { name: /banked resets? available/ })).not.toBeInTheDocument();
 });
 
 
@@ -171,6 +178,7 @@ it.each(["disconnected", "expired", "network"])("distinguishes %s accounts and r
     expect(within(card).queryByText("Reconnect needed")).not.toBeInTheDocument();
   } else {
     expect(card).toHaveClass("is-disconnected");
+    expect(within(card).queryByRole("img", { name: /banked reset/ })).not.toBeInTheDocument();
     expect(within(card).getByRole("status", { name: "Connection for Personal" })).toHaveTextContent("Reconnect needed");
     expect(within(card).queryByText("Active")).not.toBeInTheDocument();
     expect(within(card).queryByRole("meter")).not.toBeInTheDocument();
@@ -209,7 +217,7 @@ it("offers switching when the current Codex login was not saved during setup", a
   const props = { workspace, app: DEFAULT_APP_SETTINGS, profiles: { profiles: [profile("imported")], activeProfileId: null, canImport: true, desktopInstalled: true, switchError: null }, quotas: ready("imported"), busy: false, onManage: vi.fn(), onActivate: activate };
   const view = render(<WorkspaceAccounts {...props} />);
   expect(screen.queryByText("Active")).not.toBeInTheDocument();
-  expect(screen.getByText("Choose an account’s switch button to activate it in Codex.")).toBeVisible();
+  expect(screen.queryByText("Choose an account’s switch button to activate it in Codex.")).not.toBeInTheDocument();
   const user = (await import("@testing-library/user-event")).default.setup();
   await user.click(screen.getByRole("button", { name: "Switch to imported" }));
   expect(activate).toHaveBeenCalledExactlyOnceWith("imported");

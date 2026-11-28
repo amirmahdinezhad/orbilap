@@ -1,6 +1,6 @@
 import { render, findErrorToast } from "../test/notifications";
 import { act, cleanup, fireEvent, waitFor, screen, within } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AntigravityAccounts } from "./AntigravityAccounts";
 import { DEFAULT_WORKSPACE_USAGE } from "../types";
 import type { SetupAccount } from "../api";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 const { list, activate, usage } = vi.hoisted(() => ({ list: vi.fn(), activate: vi.fn(), usage: vi.fn() }));
 vi.mock("../api", async original => ({ ...await original<typeof import("../api")>(), antigravityAccounts: list, activateAntigravityAccount: activate, antigravityAccountQuota: usage }));
+beforeEach(() => { usage.mockResolvedValue({ provider: "antigravity", windows: [] }); });
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const account = (id: string): SetupAccount => ({ id, provider: "antigravity", name: id, email: `${id}@example.com`, subscription: { id: "google", service: "Google", plan: "Pro" } });
 const workspace = { id: "studio", name: "Studio", accent: "#007aff", accountIds: [], antigravityAccountIds: ["one"], usage: DEFAULT_WORKSPACE_USAGE };
@@ -115,72 +116,98 @@ it("uses a private card title for accounts whose saved name is an email", async 
 });
 
 
-it("shows available Gemini models and keeps partner limits off the card", async () => {
+it("matches shared Gemini usage and reveals shared Claude/GPT limits in Additional", async () => {
   list.mockResolvedValue([account("one")]);
   usage.mockResolvedValue({
-    provider: "antigravity",
-    models: ["Gemini 3.8 Flash (High)", "Gemini 9 Preview", "Gemini 4 Argon", "Gemini 4 Carbon", "Gemini 3.8 Flash (Low)", "chat_23310", "tab_flash_lite_preview", "gemini-3.8-flash-tiered"],
+    provider: "antigravity", models: ["Gemini 4 Carbon", "Gemini 4 Argon"],
     windows: [
-      { window: "Gemini Models · 5-hour", percent: 4 },
-      { window: "Gemini Models · Weekly", percent: 5 },
-      { window: "Claude & GPT (shared) · Weekly", percent: 10 },
-      { window: "Gemini 9 Preview · 5-hour", percent: 20 },
-      { window: "Gemini 9 Preview · Weekly", percent: 50 },
-      { window: "Gemini 4 Argon · Weekly", percent: 16 },
-      { window: "Gemini 4 Carbon · Weekly", percent: 8 },
+      { window: "Gemini Models · 5-hour", percent: 1, resetsAt: new Date(Date.now() + 164 * 60000).toISOString() },
+      { window: "Gemini Models · Weekly", percent: 30, resetsAt: new Date(Date.now() + 155 * 3600000).toISOString() },
+      { window: "Claude & GPT (shared) · Weekly", percent: 50 },
+      { window: "Claude & GPT (shared) · 5-hour", percent: 0 },
     ],
   });
   render(<AntigravityAccounts workspace={workspace} refreshKey={0} onChanged={vi.fn()} />);
-  const featured = await screen.findByRole("group", { name: "Featured Gemini models" });
+  const main = await screen.findByRole("group", { name: "Usage for one · Gemini Models" });
   expect(usage).toHaveBeenCalledWith("one", true);
-  expect(within(featured).getByText("Carbon · Weekly")).toBeVisible();
-  expect(within(featured).getByText("Argon · Weekly")).toBeVisible();
-  expect(within(featured).queryByRole("heading")).not.toBeInTheDocument();
-  expect(within(featured).queryByText(/Gemini 4/)).not.toBeInTheDocument();
-  expect(within(featured).getAllByRole("meter").map(meter => meter.getAttribute("aria-valuenow"))).toEqual(["92", "84"]);
+  expect(within(main).getAllByRole("meter").map(meter => meter.getAttribute("aria-valuenow"))).toEqual(["99", "70"]);
+  expect(within(main).getAllByRole("meter").map(meter => meter.getAttribute("aria-label"))).toEqual([
+    "Gemini · 5-hour remaining", "Gemini · Weekly remaining",
+  ]);
+  expect(within(main).getByRole("meter", { name: "Gemini · Weekly remaining" })).toHaveAttribute("aria-valuetext", expect.stringContaining("Reset"));
+  expect(screen.queryByText(/Carbon|Argon/)).not.toBeInTheDocument();
   expect(screen.getAllByRole("meter")).toHaveLength(2);
   const toggle = screen.getByRole("button", { name: /Additional limits/ });
   expect(toggle).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(toggle);
-  expect(toggle).toHaveAttribute("aria-expanded", "true");
-  expect(screen.queryByText("Gemini 9 Preview, Gemini 3.8 Flash")).not.toBeInTheDocument();
-  const extra = screen.getByRole("group", { name: "Usage for one additional limits" });
-  expect(within(extra).getByRole("meter", { name: "Gemini · Weekly remaining" })).toHaveAttribute("aria-valuenow", "95");
-  expect(within(extra).queryByRole("meter", { name: /Carbon|Argon/ })).not.toBeInTheDocument();
-  expect(within(extra).getByRole("meter", { name: "Gemini 9 Preview · Weekly remaining" })).toHaveAttribute("aria-valuenow", "50");
-  expect(within(extra).getByRole("meter", { name: "Gemini 9 Preview · 5-hour remaining" })).toHaveAttribute("aria-valuenow", "80");
-  expect(screen.queryByText(/chat_23310|tab_flash_lite_preview|flash-tiered/)).not.toBeInTheDocument();
-  expect(screen.queryByText(/Claude|GPT/)).not.toBeInTheDocument();
+  const extra = screen.getByRole("group", { name: "Usage for one · Claude and GPT models" });
+  expect(within(extra).getAllByRole("meter").map(meter => meter.getAttribute("aria-valuenow"))).toEqual(["100", "50"]);
+  expect(within(extra).getByRole("meter", { name: "Claude & GPT · 5-hour remaining" })).toHaveAttribute("aria-valuenow", "100");
+  fireEvent.click(toggle);
+  expect(screen.getAllByRole("meter")).toHaveLength(2);
 });
 
-
-it("shows one featured model when the account only reports Argon", async () => {
+it("does not invent shared capacity from model-specific fallback limits", async () => {
   list.mockResolvedValue([account("one")]);
-  usage.mockResolvedValue({
-    provider: "antigravity",
-    models: ["Gemini 4 Argon", "Gemini 4 Hydrogen"],
-    windows: [{ window: "Gemini 4 Argon · Weekly", percent: 14 }],
-  });
+  usage.mockResolvedValue({ provider: "antigravity", windows: [
+    { window: "Gemini 4 Argon · Weekly", percent: 14 },
+    { window: "Claude · Reported quota", percent: 100 },
+  ] });
   render(<AntigravityAccounts workspace={workspace} refreshKey={0} onChanged={vi.fn()} />);
-  const featured = await screen.findByRole("group", { name: "Featured Gemini models" });
-  expect(within(featured).getByText("Argon · Weekly")).toBeVisible();
-  expect(within(featured).getByRole("meter", { name: "Argon · Weekly remaining" })).toHaveAttribute("aria-valuenow", "86");
-  expect(screen.queryByRole("button", { name: "Additional limits" })).not.toBeInTheDocument();
+  expect(await screen.findByText("Gemini usage unavailable")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /Additional limits/ }));
+  expect(screen.getByRole("meter", { name: "Gemini 4 Argon · Weekly remaining" })).toHaveAttribute("aria-valuenow", "86");
+  expect(screen.getByRole("meter", { name: "Claude · Reported quota remaining" })).toHaveAttribute("aria-valuenow", "0");
 });
 
-
-it("shows the remaining limits directly when neither Carbon nor Argon is available", async () => {
+it("keeps weekly-only shared quotas and never synthesizes a five-hour reading", async () => {
   list.mockResolvedValue([account("one")]);
-  usage.mockResolvedValue({
-    provider: "antigravity",
-    windows: [
-      { window: "Gemini Models · 5-hour", percent: 12 },
-      { window: "Gemini Models · Weekly", percent: 34 },
-    ],
-  });
+  usage.mockResolvedValue({ provider: "antigravity", windows: [
+    { window: "Gemini · Weekly", percent: 100, resetsAt: "2020-01-01T00:00:00Z" },
+    { window: "Gemini · 5-hour", percent: Number.NaN },
+  ] });
   render(<AntigravityAccounts workspace={workspace} refreshKey={0} onChanged={vi.fn()} />);
-  const preview = await screen.findByRole("group", { name: "Usage for one" });
-  expect(within(preview).getAllByRole("meter").map(meter => meter.getAttribute("aria-valuenow"))).toEqual(["88", "66"]);
+  const meter = await screen.findByRole("meter", { name: "Gemini · Weekly remaining" });
+  expect(meter).toHaveAttribute("aria-valuenow", "0");
+  expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("waiting for fresh usage"));
+  expect(screen.getAllByRole("meter")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: /Additional limits/ })).not.toBeInTheDocument();
-  expect(screen.queryByRole("group", { name: "Featured Gemini models" })).not.toBeInTheDocument();
+});
+
+it("checks the saved plan before showing the first card and omits confirmed expired accounts without refresh", async () => {
+  let reject!: (reason: Error) => void;
+  usage.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  list.mockResolvedValueOnce([account("one")]).mockResolvedValueOnce([]);
+  render(<AntigravityAccounts workspace={workspace} refreshKey={0} onChanged={vi.fn()} />);
+  await waitFor(() => expect(usage).toHaveBeenCalledWith("one", true));
+  expect(screen.getByLabelText("Loading accounts")).toBeVisible();
+  expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  await act(async () => reject(new Error("A paid Antigravity plan is required.")));
+  await waitFor(() => expect(screen.queryByLabelText("Loading accounts")).not.toBeInTheDocument());
+  expect(list).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  expect(screen.queryByText(/paid Antigravity plan/)).not.toBeInTheDocument();
+});
+
+it("retains an account on a transient usage failure and reuses the first reading", async () => {
+  list.mockResolvedValue([account("one")]);
+  usage.mockRejectedValue(new Error("Google request took too long."));
+  render(<AntigravityAccounts workspace={workspace} refreshKey={0} onChanged={vi.fn()} />);
+  expect(await screen.findByRole("article", { name: "one Antigravity account" })).toBeVisible();
+  expect(await findErrorToast("Google request took too long.")).toBeVisible();
+  expect(usage).toHaveBeenCalledTimes(1);
+});
+
+it("ignores old plan verification when the workspace changes", async () => {
+  let finish!: (value: unknown) => void;
+  list.mockResolvedValueOnce([account("one")]).mockResolvedValueOnce([account("two")]);
+  usage.mockImplementationOnce(() => new Promise(done => { finish = done; }))
+    .mockResolvedValue({ provider: "antigravity", windows: [{ window: "5-hour", percent: 20 }] });
+  const view = render(<AntigravityAccounts workspace={workspace} refreshKey={0} onChanged={vi.fn()} />);
+  await waitFor(() => expect(usage).toHaveBeenCalledWith("one", true));
+  view.rerender(<AntigravityAccounts workspace={{ ...workspace, id: "next", antigravityAccountIds: ["two"] }} refreshKey={0} onChanged={vi.fn()} />);
+  expect(await screen.findByRole("article", { name: "two Antigravity account" })).toBeVisible();
+  await act(async () => finish({ provider: "antigravity", windows: [] }));
+  expect(screen.queryByRole("article", { name: "one Antigravity account" })).not.toBeInTheDocument();
+  expect(usage).toHaveBeenCalledTimes(2);
 });

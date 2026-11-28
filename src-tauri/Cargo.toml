@@ -1,6 +1,6 @@
 [package]
 name = "orbilap"
-version = "1.0.4"
+version = "1.1.0"
 description = "Switch AI accounts in seconds and see usage at a glance."
 authors = ["Amir Mahdi Nezhad"]
 edition = "2021"
@@ -33,6 +33,7 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 base64 = "0.22"
 toml = "1.1"
 uuid = { version = "1", features = ["v4"] }
+tauri-plugin-global-shortcut = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Use macOS Security.framework for both provider HTTPS and signed updates.

@@ -1,3 +1,4 @@
+import orbilapGlyph from "../src-tauri/icons/tray-template.png";
 import { Avatar, AvatarFallback } from "./components/ui/avatar";
 import appIcon from "./assets/app-icon.webp?no-inline";
 import antigravity from "./assets/antigravity.svg?no-inline";
@@ -11,6 +12,11 @@ import { hashHue } from "./format";
 
 export function AppLogo() {
   return <img className="app-mark" src={appIcon} alt="" aria-hidden="true" draggable={false} />;
+}
+
+/** Transparent silver brand glyph; preserve the 34×34 artwork inside its 46×36 mask. */
+export function AppGlyph() {
+  return <span className="app-glyph" aria-hidden="true" style={{ maskImage: `url(${orbilapGlyph})` }} />;
 }
 
 function ProviderMark({ dark, light, className = "" }: { dark: string; light?: string; className?: string }) {

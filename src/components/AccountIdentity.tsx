@@ -15,8 +15,8 @@ export function accountInitials(name: string): string {
 }
 
 /** One identity layout for saved accounts; the monogram never replaces the full name. */
-export function AccountIdentity({ name, email, detail, active, subscriptions, children }: {
-  name: string; email?: string | null; detail?: string | null; active?: boolean; subscriptions?: readonly Subscription[]; children: ReactNode;
+export function AccountIdentity({ name, email, detail, active, subscriptions, secondaryMeta, children }: {
+  name: string; email?: string | null; detail?: string | null; active?: boolean; subscriptions?: readonly Subscription[]; secondaryMeta?: ReactNode; children: ReactNode;
 }) {
   return <div className="workspace-account-info account-identity">
     <span className="account-monogram" aria-hidden="true">{accountInitials(name)}</span>
@@ -30,6 +30,7 @@ export function AccountIdentity({ name, email, detail, active, subscriptions, ch
       <div className="account-secondary-meta">
         {subscriptions?.map(subscription => <SubscriptionExpiry key={subscription.id} subscription={subscription} showService={subscriptions.length > 1} />)}
         {email ? <Tooltip content={email}><p className="workspace-account-email" dir="auto">{email}</p></Tooltip> : null}
+        {secondaryMeta}
       </div>
     </div>
   </div>;

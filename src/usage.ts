@@ -1,5 +1,11 @@
 import type { QuotaWindow } from "./api";
 
+/** Keep positive remaining quota visible; zero means genuinely exhausted. */
+export function remainingPercent(used: number): number {
+  const remaining = Math.min(100, Math.max(0, 100 - used));
+  return remaining > 0 ? Math.max(1, Math.round(remaining)) : 0;
+}
+
 /** Elapsed fraction and end-of-period projection for known session/week windows. */
 export function usagePace(
   window: QuotaWindow,

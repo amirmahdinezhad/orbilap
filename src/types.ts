@@ -88,7 +88,7 @@ export interface WorkspaceUsage {
   menuBarProviders?: ("codex" | "claude" | "antigravity")[] | null;
   /** Legacy single-provider target; live provider logins determine the displayed accounts. */
   menuBarAccountId?: string | null;
-  /** Missing preserves automatic multi-provider logos; explicit values override it. */
+  /** Defaults to true; explicit values override it. */
   showProviderLogos?: boolean | null;
   /** Defaults to true; the app mark remains as the fallback when no usage renders. */
   showAppLogo?: boolean;
@@ -96,7 +96,7 @@ export interface WorkspaceUsage {
   defaultMenuBarLimits?: boolean;
   accountWindows?: Record<string, string[]>;
   warningColors?: boolean;
-  /** Enabled menu-bar color levels, in used percent; an empty list disables all levels. */
+  /** Legacy saved levels retained for compatibility; warning colors now use a fixed below-15%-remaining rule. */
   warningThresholds?: number[] | null;
   showAccountName?: boolean | null;
   autoSwitchRemaining?: number;
@@ -131,7 +131,23 @@ export const DEFAULT_WORKSPACE_USAGE: WorkspaceUsage = {
 };
 
 /** Initial settings also serve as the reset payload. */
+export type FloatingUsageMode = "badge";
+export interface FloatingUsagePreferences { enabled: boolean; provider: "codex" | "claude" | "antigravity"; mode: FloatingUsageMode; providers?: ("codex" | "claude" | "antigravity")[]; windows?: Partial<Record<"codex" | "claude" | "antigravity", string>> }
+export const DEFAULT_FLOATING_USAGE: FloatingUsagePreferences = { enabled: false, provider: "codex", mode: "badge" };
+export interface FloatingUsageSnapshot {
+  items?: FloatingUsageSnapshot[];
+  mode: FloatingUsageMode;
+  provider: string; accountId: string | null; accountName: string | null;
+  workspaceId: string | null; workspaceName: string | null; showRemaining: boolean;
+  limits: { label: string; used: number | null; resetsAt: string | null; warningColor?: string | null }[];
+  message: string | null;
+}
+export const DEFAULT_PANEL_SHORTCUT = { enabled: false, accelerator: "super+shift+KeyO" };
+export interface PanelShortcutPreferences { enabled: boolean; accelerator: string }
+
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  floatingUsage: DEFAULT_FLOATING_USAGE,
+  panelShortcut: DEFAULT_PANEL_SHORTCUT,
   refreshIntervalSecs: 60,
   usageShowRemaining: true,
   menuBarEnabled: false,
@@ -168,6 +184,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 
 /** Persisted backend preferences shared by the panel and settings modal. */
 export interface AppSettings {
+  floatingUsage: FloatingUsagePreferences;
+  panelShortcut: PanelShortcutPreferences;
   refreshIntervalSecs: number;
   /** Default: capacity counts down from 100%; false shows consumed capacity. */
   usageShowRemaining: boolean;
@@ -189,6 +207,7 @@ export interface AppSettings {
 
 /** Backend preferences plus the OS launch-at-login state. */
 export interface AppState {
+  panelShortcutError?: string | null;
   settings: { openAtLogin: boolean };
   app: AppSettings;
 }

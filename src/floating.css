@@ -1,0 +1,28 @@
+html[data-surface="floating"],html[data-surface="floating"] body { background:transparent;overflow:hidden; }
+html[data-surface="floating"] #root {padding:.375rem;}
+.floating-orb.ui-button,.floating-orb {position:relative;display:flex;justify-content:center;align-items:center;width:3.75rem;height:3.75rem;min-height:0;padding:0;border:0;border-radius:50%;background:#000;color:#fff;--home-divider:#444;--control-hover-fill:#000;box-shadow:0 .125rem .375rem #0006;}
+.floating-orb-rings {display:block;width:100%;height:100%;cursor:grab;}
+.floating-orb-rings path {fill:none;stroke-width:5;}
+/* Inset the rail beneath the progress stroke so its antialiasing cannot form
+   a second outline around the white/colored arc. Keep the SVG at its full 60pt. */
+.floating-orb-rings .floating-orb-track {stroke:var(--home-divider);stroke-width:4;stroke-linecap:round;}
+.floating-orb-progress {stroke-linecap:round;}
+.floating-orb-rings [data-provider="claude"] .floating-orb-progress {stroke:#d97757;}
+.floating-orb-rings [data-state="unavailable"] .floating-orb-track {opacity:.45;}
+
+/* The floating indicator is a permanently dark material in every app theme/state. */
+.floating-orb.ui-button:is(:hover,:active,:focus,:focus-visible) {background:#000;color:#fff;}
+.floating-orb.ui-button:focus-visible {outline-color:#fff;}
+
+.floating-orb-center {position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.125rem;cursor:grab;}
+.app-glyph {display:block;flex:none;width:1.5rem;height:1.5rem;background:linear-gradient(145deg,#fff 0%,#b8bdc5 24%,#f4f5f7 43%,#787f89 66%,#e4e7eb 85%,#a0a6af 100%);mask-size:112.745098% 88.235294%;filter:drop-shadow(0 .5px 0 #fff6) drop-shadow(0 1px 1px #000);mask-position:center;mask-repeat:no-repeat;}
+
+
+/* Source mask is 46×36 with a centered 34×34 glyph. Equal-axis scaling removes
+   only transparent padding, preserving its circular silhouette without stretching.
+   Render the 20pt artwork in a 24pt paint box: 2pt inset on every edge keeps
+   mask antialiasing and the static highlight shadow away from clipping. */
+
+
+.menubar-provider-choice[aria-disabled="true"] .setting-name,
+.floating-settings-preview[aria-disabled="true"] {opacity:.45;}

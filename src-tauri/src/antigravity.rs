@@ -287,6 +287,7 @@ fn inspect_credentials(home: &Path, value: Value, probe: &Probe) -> Result<(Stri
     });
     let (mut value, identity, email) = user??;
     let data = data?;
+    record_subscription(home, &data)?;
     let subscription = paid_subscription(&data)?;
     value["email"] = email.clone().into();
     value["project_id"] = data["cloudaicompanionProject"]
@@ -302,7 +303,7 @@ fn paid_subscription(data: &Value) -> Result<Subscription, String> {
     let tier = &data["paidTier"];
     let plan = string(tier,&["name","id"]).or_else(|| (data["currentTier"]["id"] == "standard-tier").then(|| "Paid".into()))
         .ok_or("A paid Antigravity plan could not be confirmed. Check your subscription and try again.")?;
-    if plan.to_ascii_lowercase().contains("free") || plan.to_ascii_lowercase().contains("trial") {
+    if tier["id"] == "free-tier" || plan.to_ascii_lowercase().contains("free") || plan.to_ascii_lowercase().contains("trial") {
         return Err("A paid Antigravity plan is required.".into());
     }
     Ok(Subscription {
@@ -314,6 +315,34 @@ fn paid_subscription(data: &Value) -> Result<Subscription, String> {
         monthly_price_usd: None, billing: None,
     })
 }
+// Only authenticated, identity-checked loadCodeAssist responses reach this writer.
+// Unknown schemas and request failures never revoke a previously paid account.
+fn record_subscription(home: &Path, data: &Value) -> Result<(), String> {
+    let subscription = match paid_subscription(data) {
+        Ok(subscription) => subscription,
+        Err(_) => {
+            let tier = if data["paidTier"].is_object() { &data["paidTier"] } else { &data["currentTier"] };
+            let explicitly_free = tier["id"].as_str() == Some("free-tier")
+                || tier["name"].as_str().is_some_and(|name| matches!(name.trim().to_ascii_lowercase().as_str(), "free" | "free tier" | "free-tier"));
+            if !explicitly_free { return Ok(()); }
+            Subscription {
+                id: "antigravity".into(), service: "Antigravity".into(),
+                plan: Some("Free".into()), status: Some("expired".into()),
+                expires_at: None, monthly_price_usd: None, billing: None,
+            }
+        }
+    };
+    write_private(&home.join("subscription.json"), &serde_json::to_value(subscription).map_err(|_| "Cannot encode Google subscription.")?)
+}
+
+fn observed_subscription(home: &Path) -> Option<Subscription> {
+    let path = home.join("subscription.json");
+    let metadata = std::fs::symlink_metadata(&path).ok()?;
+    if !metadata.is_file() || metadata.len() > 16 * 1024 { return None; }
+    let subscription: Subscription = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    (subscription.id == "antigravity").then_some(subscription)
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Saved {
     pub id: String,
@@ -373,26 +402,26 @@ fn expired(profile: &Saved) -> bool {
 }
 
 pub(crate) fn purge_expired() -> Result<(Vec<String>, bool), String> {
-    with_repository(|| {
-        let file = index();
-        let mut saved = read_index()?;
-        let last_login = file.with_file_name("last-login.json");
-        let selected = paths::read_json(&last_login).and_then(|v| v["id"].as_str().map(str::to_owned));
-        let mut changed = false;
-        for profile in saved.iter().filter(|profile| expired(profile)) {
-            let home = crate::profiles::managed_account_home(&file, &profile.id, &profile.home)?;
-            if selected.as_deref() == Some(&profile.id) {
-                std::fs::remove_file(&last_login).map_err(|_| "Cannot clear the last saved Antigravity login.")?;
-            }
-            crate::profiles::remove_account_home(&home)?;
-            changed = true;
+    with_repository(|| purge_expired_from(&index()))
+}
+fn purge_expired_from(file: &Path) -> Result<(Vec<String>, bool), String> {
+    let mut saved = read_index_from(file)?;
+    let last_login = file.with_file_name("last-login.json");
+    let selected = paths::read_json(&last_login).and_then(|v| v["id"].as_str().map(str::to_owned));
+    let mut changed = false;
+    for profile in saved.iter().filter(|profile| expired(profile)) {
+        let home = crate::profiles::managed_account_home(&file, &profile.id, &profile.home)?;
+        if selected.as_deref() == Some(&profile.id) {
+            std::fs::remove_file(&last_login).map_err(|_| "Cannot clear the last saved Antigravity login.")?;
         }
-        if changed {
-            saved.retain(|profile| !expired(profile));
-            write_private(&file, &serde_json::to_value(&saved).map_err(|_| "Cannot encode Antigravity accounts.")?)?;
-        }
-        Ok((saved.into_iter().map(|profile| profile.id).collect(), changed))
-    })
+        crate::profiles::remove_account_home(&home)?;
+        changed = true;
+    }
+    if changed {
+        saved.retain(|profile| !expired(profile));
+        write_private(&file, &serde_json::to_value(&saved).map_err(|_| "Cannot encode Antigravity accounts.")?)?;
+    }
+    Ok((saved.into_iter().map(|profile| profile.id).collect(), changed))
 }
 /// Index updates use atomic replacement, so discovery can read a complete
 /// snapshot even while another request holds the credential renewal lock.
@@ -409,9 +438,21 @@ fn list_unlocked() -> Result<Vec<Saved>, String> {
 }
 
 fn read_index() -> Result<Vec<Saved>, String> {
-    match std::fs::read(index()) {
-        Ok(raw) => serde_json::from_slice(&raw)
-            .map_err(|_| "Cannot read saved Antigravity accounts.".into()),
+    read_index_from(&index())
+}
+fn read_index_from(file: &Path) -> Result<Vec<Saved>, String> {
+    match std::fs::read(file) {
+        Ok(raw) => {
+            let mut saved: Vec<Saved> = serde_json::from_slice(&raw)
+                .map_err(|_| "Cannot read saved Antigravity accounts.".to_string())?;
+            for profile in &mut saved {
+                let home = crate::profiles::managed_account_home(file, &profile.id, &profile.home)?;
+                if let Some(subscription) = observed_subscription(&home) {
+                    profile.subscription = Some(subscription);
+                }
+            }
+            Ok(saved)
+        },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
         Err(_) => Err("Cannot read Antigravity accounts.".into()),
     }
@@ -438,6 +479,7 @@ fn save_verified(index_path: &Path, name: &str, email: Option<String>, subscript
             write_private(&entry.home.join("auth.json"), &credentials)?;
             entry.name = name.into();
             entry.email = email;
+            write_private(&entry.home.join("subscription.json"), &serde_json::to_value(&subscription).map_err(|_| "Cannot encode Google subscription.")?)?;
             entry.subscription = Some(subscription);
             let id = entry.id.clone();
             write_private(index_path, &serde_json::to_value(&saved).unwrap())?;
@@ -680,24 +722,20 @@ fn summary_quota(data: &Value, use_group_names: bool) -> Result<crate::quota::Qu
     let groups = if groups.iter().any(|g| g["buckets"].as_array().is_some_and(|b| !b.is_empty())) { groups } else { vec![data] };
     for group in groups {
         for bucket in group["buckets"].as_array().into_iter().flatten() {
-            if bucket["disabled"] == true { continue; }
+            if group["disabled"] == true || bucket["disabled"] == true { continue; }
             if let Some(fraction) = bucket.get("remainingFraction").unwrap_or(&bucket["remaining"]["remainingFraction"])
                 .as_f64().filter(|f| f.is_finite() && (0.0..=1.0).contains(f)) {
                 let id = bucket["bucketId"].as_str().unwrap_or("");
-                if use_group_names && id.starts_with("3p-") { continue; }
                 let group_name = if use_group_names {
                     string(group, &["displayName", "label"])
                 } else { None };
-                let gemini_group = group_name.filter(|name| name.to_ascii_lowercase().starts_with("gemini"));
-                let name = if let Some(name) = gemini_group { name }
+                let reported_group = group_name;
+                let name = if let Some(name) = reported_group { name }
                     else if id.starts_with("gemini-carbon-") || id.starts_with("gemini-4-carbon-") { "Gemini 4 Carbon".into() }
                     else if id.starts_with("gemini-argon-") || id.starts_with("gemini-4-argon-") { "Gemini 4 Argon".into() }
                     else if id.starts_with("gemini-") { "Gemini".into() }
                     else if id.starts_with("3p-") { "Claude & GPT (shared)".into() }
                     else { string(bucket, &["displayName", "bucketId"]).unwrap_or("Usage".into()) };
-                if use_group_names && !name.to_ascii_lowercase().starts_with("gemini") {
-                    continue;
-                }
                 let cadence = match bucket["window"].as_str() { Some("5h") => Some("5-hour"), Some("weekly") => Some("Weekly"), _ => None };
                 let mut reset = string(bucket, &["resetTime", "resetsAt"])
                     .filter(|r| crate::timestamps::parse_rfc3339(r).is_ok());
@@ -733,8 +771,12 @@ fn model_quota(data: &Value, use_model_names: bool) -> Result<crate::quota::Quot
             _ if id.starts_with("gemini-") => "Gemini", _ if id.starts_with("claude-") => "Claude", _ if id.starts_with("gpt-") => "GPT", _ if use_model_names => "Gemini", _ => continue,
         };
         let model_name = if use_model_names {
-            let Some(name) = google_model_name(id, model) else { continue };
-            Some(name)
+            if model["disabled"] == true || model["isAvailable"] == false { continue; }
+            if family == "Gemini" {
+                let Some(name) = google_model_name(id, model) else { continue };
+                Some(name)
+            }
+            else { Some(string(model, &["displayName", "label"]).unwrap_or_else(|| family.into())) }
         } else { None };
         let family = model_name.as_deref().unwrap_or(family);
         for (key, label) in [("quotaInfo", "Reported quota"), ("weeklyQuotaInfo", "Weekly")] {
@@ -1201,6 +1243,43 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn confirmed_free_plan_replaces_saved_pro_and_unknown_responses_preserve_it() {
+        let dir = std::env::temp_dir().join(format!("orbilap-google-billing-{}", uuid::Uuid::new_v4()));
+        private_dir(&dir).unwrap();
+        let index = dir.join("profiles.json");
+        let token = json!({"email":"synthetic@example.com","refresh_token":"synthetic","client_id":"synthetic","client_secret":"synthetic"});
+        let paid = json!({"paidTier":{"id":"google-ai-pro","name":"Google AI Pro"},"currentTier":{"id":"free-tier"}});
+        let (id, _) = save_verified(&index, "Synthetic", Some("synthetic@example.com".into()), paid_subscription(&paid).unwrap(), &token).unwrap();
+        let home = dir.join(&id);
+        record_subscription(&home, &paid).unwrap();
+        for unknown in [json!({}), json!({"error":{"code":403}}), json!({"currentTier":{"id":"future-tier"}}), json!({"currentTier":{"id":"legacy-tier"}}), json!({"quota":0})] {
+            record_subscription(&home, &unknown).unwrap();
+            assert!(read_index_from(&index).unwrap()[0].subscription.as_ref().unwrap().is_paid());
+        }
+        record_subscription(&home, &json!({"paidTier":null,"currentTier":{"id":"free-tier"}})).unwrap();
+        let accounts = read_index_from(&index).unwrap();
+        assert!(expired(&accounts[0]));
+        assert_eq!(accounts.into_iter().filter(|profile| !expired(profile)).count(), 0);
+        assert_eq!(paths::read_json(&home.join("auth.json")).unwrap(), token);
+        record_subscription(&home, &json!({})).unwrap();
+        assert!(expired(&read_index_from(&index).unwrap()[0]));
+        // Reconnecting the same account with verified paid access clears the observation.
+        save_verified(&index, "Synthetic", Some("synthetic@example.com".into()), paid_subscription(&paid).unwrap(), &token).unwrap();
+        assert!(!expired(&read_index_from(&index).unwrap()[0]));
+        record_subscription(&home, &json!({"paidTier":{"id":"free-tier","name":"Google AI Pro"}})).unwrap();
+        assert!(expired(&read_index_from(&index).unwrap()[0]));
+        record_subscription(&home, &paid).unwrap();
+        assert!(read_index_from(&index).unwrap()[0].subscription.as_ref().unwrap().is_paid());
+        record_subscription(&home, &json!({"currentTier":{"id":"free-tier"}})).unwrap();
+        assert_eq!(purge_expired_from(&index).unwrap(), (vec![], true));
+        assert!(!home.exists());
+        assert!(!index.with_file_name("last-login.json").exists());
+        assert!(read_index_from(&index).unwrap().is_empty());
+        assert_eq!(purge_expired_from(&index).unwrap(), (vec![], false));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn unknown_free_and_quota_only_are_not_paid() {
         for data in [
             json!({}),
@@ -1510,6 +1589,38 @@ mod activation_tests {
             ]}
         ]})).unwrap().windows.unwrap();
         assert_eq!(summary[0].window, "Gemini 9 Preview · Weekly");
+    }
+
+    #[test]
+    fn card_keeps_shared_gemini_and_partner_groups_with_both_periods() {
+        let data = json!({"groups":[
+            {"displayName":"Gemini Models", "buckets":[
+                {"bucketId":"gemini-standard-weekly","window":"weekly","remainingFraction":0.70,"resetTime":"2030-01-07T00:00:00Z"},
+                {"bucketId":"gemini-standard-5h","window":"5h","remainingFraction":0.99}
+            ]},
+            {"displayName":"Claude and GPT models", "buckets":[
+                {"bucketId":"3p-weekly","window":"weekly","remainingFraction":0.50},
+                {"bucketId":"3p-5h","window":"5h","remainingFraction":1.0}
+            ]},
+            {"displayName":"Disabled", "disabled":true,"buckets":[
+                {"bucketId":"disabled","remainingFraction":0.0}
+            ]}
+        ]});
+        let windows = card_quota_from_summary(&data).unwrap().windows.unwrap();
+        assert_eq!(windows.len(), 4);
+        let weekly = windows.iter().find(|w| w.window == "Gemini Models · Weekly").unwrap();
+        assert!((weekly.percent - 30.0).abs() < 0.001);
+        assert_eq!(weekly.resets_at.as_deref(), Some("2030-01-07T00:00:00Z"));
+        assert_eq!(windows.iter().find(|w| w.window == "Claude and GPT models · Weekly").unwrap().percent, 50.0);
+        assert_eq!(windows.iter().find(|w| w.window == "Claude and GPT models · 5-hour").unwrap().percent, 0.0);
+        let fallback = card_quota_from_models(&json!({"models":{
+            "claude-one":{"displayName":"Claude Example","modelProvider":"MODEL_PROVIDER_ANTHROPIC","weeklyQuotaInfo":{"remainingFraction":0.5}},
+            "gpt-one":{"modelProvider":"MODEL_PROVIDER_OPENAI","quotaInfo":{"remainingFraction":0.0}},
+            "gpt-disabled":{"disabled":true,"modelProvider":"MODEL_PROVIDER_OPENAI","quotaInfo":{"remainingFraction":0.9}}
+        }})).unwrap().windows.unwrap();
+        assert_eq!(fallback.len(), 2);
+        assert!(fallback.iter().any(|w| w.window == "Claude Example · Weekly" && w.percent == 50.0));
+        assert!(fallback.iter().any(|w| w.window == "GPT · Reported quota" && w.percent == 100.0));
     }
 
     #[test]

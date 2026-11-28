@@ -117,6 +117,14 @@
 
 ### Native panel and HMR verification
 
+- During dev QA, never target the app by `Orbilap`, the shared production bundle
+  identifier, or `/Applications/Orbilap.app` through Computer Use, `open`, or
+  Launch Services. App lookup can launch the installed production app even when
+  the owner has explicitly quit it. First identify the running debug PID and
+  exact executable; use a tool only if it can attach to that existing process
+  without launching another app. If it cannot, record native UI verification as
+  unavailable and use the owner’s dev-panel check. Never fall back to production.
+
 - A plain browser has no Tauri IPC, so the app shows the
   "Couldn't load settings … (reading 'invoke')" empty state there. That is
   expected — the real provider list only renders inside the Tauri window.
@@ -156,3 +164,41 @@ native dev panel. Complete these checks after every task:
   `grilling` skill to review the open decisions before enabling the feature.
   The code and previous candidate evidence are retained; the feature is off
   in the default app and ordinary dev builds.
+
+## Global panel shortcut implementation
+
+The owner's configurable global panel shortcut uses the official
+`tauri-plugin-global-shortcut` (locked at 2.4.0) in Rust, integrated with the
+existing Tauri/React stack. It registers the chosen combination only; no arbitrary
+key stream is monitored or stored. Settings remain in the existing private
+machine-preference file. The webview uses narrow main-window IPC for recorder
+state and guarded hiding; no general plugin registration permission was added.
+Use `pnpm exec vitest run`, `cargo check --offline --locked` and
+`cargo test --offline --locked` for changes, plus the native dev checklist above.
+
+## Floating usage implementation
+
+The opt-in floating usage window reuses the existing native monitor and active
+workspace/account limit preferences. Keep it non-key and unfocused; on macOS show
+it with orderFrontRegardless rather than makeKeyAndOrderFront. Its webview has
+only event listen/unlisten capability. Guard snapshot/action/native drag commands
+by its window label, and keep account, settings and updater commands main-only.
+The header initiates native dragging on mouse-down; the readout opens the existing
+panel. Persist position with the existing private writer and recover into monitor
+work areas. Never introduce a second credential probe or expose provider failures.
+
+Floating uses equal provider segments of one progress ring, without logos, in a 60pt circle
+(72pt native frame) for any service count. Preserve canonical provider ordering,
+unknown muted/unfilled state, existing remaining/used semantics and full tooltip/
+accessibility details. Never restore expansion IPC or a second quota polling loop.
+
+Keep the floating orb pure black and Codex white across themes and all Button
+interaction states. Antigravity uses solid brand blue #3186FF from its bundled SVG logo, per the
+owner’s latest choice. Each selected provider owns 1/N of one ring, with
+a clear gap between services, rather than concentric rings.
+
+Floating limit selection: one independent limit per provider in private machine
+preferences, legacy fallback to first Menu bar selection. Settings uses main-only
+floating_usage_limit_options and floating-limit-options-updated from the existing
+monitor cache; no additional provider probe. Keep that IPC unavailable to floating
+webview, filter stale workspace/account options and preserve unavailable choices.

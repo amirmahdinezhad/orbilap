@@ -1,3 +1,4 @@
+import { canDismissPanel } from "./panelShortcut";
 import { RefreshIcon } from "./icons";
 import { ErrorToast } from "./components/Toast";
 import { AccountSortProvider } from "./components/AccountSorting";
@@ -6,6 +7,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Button } from "./components/ui/button";
 import { type AppState, type ClaudeProfile, type CodexProfilesState } from "./types";
 import {
+  hidePanelFromShortcut,
   activateCodexProfile,
   cliStatus,
   editClaudeProfile,
@@ -51,20 +53,6 @@ const ReconnectAccount = lazy(() => import("./components/ReconnectAccount").then
 
 /** Keep the tray panel mounted and coordinate status refresh, setup and popups. */
 export default function App() {
-  useEffect(() => {
-    // Capture at window level so Tab cannot reach portaled controls or focus traps.
-    const ignoreTab = (event: KeyboardEvent) => {
-      if (event.key !== "Tab") return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
-    window.addEventListener("keydown", ignoreTab, true);
-    window.addEventListener("keyup", ignoreTab, true);
-    return () => {
-      window.removeEventListener("keydown", ignoreTab, true);
-      window.removeEventListener("keyup", ignoreTab, true);
-    };
-  }, []);
 
   const [state, setState] = useState<AppState | null>(null);
   const [limitedTarget, setLimitedTarget] = useState<LimitedSwitchTarget | null>(null);
@@ -75,6 +63,7 @@ export default function App() {
   const [cliError, setCliError] = useState<string | null>(null);
   // A null value defers loading until the first open. Closed settings retain their state.
   const [settingsOpen, setSettingsOpen] = useState<boolean | null>(null);
+  const [updateUnread, setUpdateUnread] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [claudeProfilesOpen, setClaudeProfilesOpen] = useState<boolean | null>(null);
   const [claudeCreate, setClaudeCreate] = useState(false);
@@ -289,10 +278,40 @@ export default function App() {
         .catch(() => { /* Browser previews have no native event bridge. */ });
     };
     track(listen<string>("codex-profile-switched", (event) => { if (typeof event.payload === "string") completedSwitch(event.payload); else void load(); }));
+    track(listen("floating-usage-hidden", () => { void load(); }));
+    track(listen<{ accountId: string | null; workspaceId: string | null }>("floating-usage-open", event => {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      if (event.payload.workspaceId !== latestWorkspace.current?.id) return;
+      const id = event.payload.accountId;
+      if (id) requestAnimationFrame(() => {
+        const card = Array.from(document.querySelectorAll<HTMLElement>('[data-account-id]')).find(card => card.dataset.accountId === id);
+        card?.scrollIntoView({ block: "nearest", behavior: "instant" });
+      });
+    }));
     track(listen("expired-accounts-removed", () => { void load(); }));
     track(listen("antigravity-account-switched", () => { void load(); setUsageRefreshKey(key => key + 1); }));
     return () => { disposed = true; stops.forEach((stop) => stop()); };
   }, [load, completedSwitch]);
+
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    const dismiss = () => {
+      if (canDismissPanel(workspaceBusy || restart.busy || checkingSwitch.current)) {
+        void hidePanelFromShortcut().catch(() => {});
+      }
+    };
+    void listen("panel-shortcut-dismiss", dismiss).then(unlisten => {
+      if (disposed) unlisten(); else stop = unlisten;
+    }).catch(() => {});
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && canDismissPanel(workspaceBusy || restart.busy || checkingSwitch.current)) {
+        event.preventDefault(); dismiss();
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => { disposed = true; stop?.(); window.removeEventListener("keydown", escape); };
+  }, [workspaceBusy, restart.busy]);
 
   // Theme + accent paint <html> instantly and persist via displayPrefs.
   useEffect(() => {
@@ -355,7 +374,7 @@ export default function App() {
 
   return (
     <DisplayPrefsContext.Provider value={display}>
-      <HomeHeader workspace={workspace} workspaces={state?.app.workspaces ?? []} workspaceBusy={workspaceBusy} refreshing={refreshing} updatedAt={lastUpdated}
+      <HomeHeader workspace={workspace} workspaces={state?.app.workspaces ?? []} workspaceBusy={workspaceBusy} refreshing={refreshing} updatedAt={lastUpdated} updateUnread={updateUnread}
         addBusy={workspaceBusy || restart.busy} onAdd={() => setAddOpen(true)} onSettings={() => setSettingsOpen(true)}
         onSelect={(id) => { setWorkspaceBusy(true); void selectWorkspace(id).then(changeState).catch((e) => notify(prettyError(e), "err")).finally(() => setWorkspaceBusy(false)); }}
         onDeleteWorkspace={async id => {
@@ -410,7 +429,7 @@ export default function App() {
           </AccountSortProvider>
         )}
       </main>
-      <Suspense fallback={null}>{settingsOpen !== null || display.checkUpdatesOnLaunch ? <SettingsModal
+      <Suspense fallback={null}>{settingsOpen !== null || display.checkUpdatesOnLaunch || (import.meta.env.DEV && import.meta.env.VITE_ORBILAP_PREVIEW_UPDATE === "1") ? <SettingsModal
         open={settingsOpen === true}
         onClose={() => setSettingsOpen(false)}
         state={state}
@@ -420,6 +439,7 @@ export default function App() {
         notify={notify}
         display={display}
         onDisplayChanged={setDisplay}
+        onUpdateUnreadChange={setUpdateUnread}
       /> : null}</Suspense>
       <Suspense fallback={null}><AppModal open={addOpen && !!workspace} onClose={() => setAddOpen(false)} title="Add account" cardClass="add-accounts-card" hasUnsavedChanges={importDraft.dirty} busy={importDraft.busy}>
         {workspace ? <AddAccountsPanel onAccountAdded={() => notify("Account added", "ok")} workspace={workspace} onSaved={imported} onStatusChange={setImportDraft} /> : null}

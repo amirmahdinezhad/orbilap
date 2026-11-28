@@ -342,3 +342,9 @@ export const activateAntigravityAccount = (workspaceId: string, id: string): Pro
 
 /** Delete workspace metadata while preserving saved accounts and CLI sessions. */
 export const deleteWorkspace = (id: string): Promise<AppState> => invoke("delete_workspace", { id });
+
+/** Capture only a chosen shortcut; the native handler never records arbitrary typing. */
+export function setPanelShortcutRecording(active: boolean): Promise<void> {
+  return invoke("set_panel_shortcut_recording", { active });
+}
+export function hidePanelFromShortcut(): Promise<void> { return invoke("hide_panel_from_shortcut"); }

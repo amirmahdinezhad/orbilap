@@ -115,3 +115,15 @@ test("updater uses HTTPS, signature verification and explicit installation", () 
   assert.doesNotMatch(source, /\.downloadAndInstall\(/);
   assert.match(source, /Install & relaunch/);
 });
+
+test("floating webview has only event listening and its native boundary rejects main account commands", () => {
+  const floating = JSON.parse(readFileSync(new URL("../src-tauri/capabilities/floating-usage.json", import.meta.url), "utf8"));
+  assert.deepEqual(floating.windows, ["floating-usage"]);
+  assert.equal(floating.remote, undefined);
+  assert.deepEqual(floating.permissions.sort(), ["core:event:allow-listen", "core:event:allow-unlisten"]);
+  const native = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
+  assert.match(native, /floating_usage::ipc_allowed\(invoke.message.webview_ref\(\).label\(\), invoke.message.command\(\)\)/);
+  const surface = readFileSync(new URL("../src-tauri/src/floating_usage.rs", import.meta.url), "utf8");
+  assert.match(surface, /window.label\(\) != LABEL/);
+  assert.doesNotMatch(surface, /\.bearer_auth\(|Command::new|fetch_live|auth\.json/);
+});

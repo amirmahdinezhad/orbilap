@@ -120,6 +120,12 @@ fn coverage(usage: &QuotaSet) -> Vec<String> {
         .as_ref()
         .map(|s| s.plan_type.as_str())
         .unwrap_or("");
+    // Pro resets cover the weekly allowance. Usage snapshots may omit that
+    // bucket; omission is not evidence that the plan cannot redeem a credit.
+    // The credit's explicit provider support flag is still checked below.
+    if matches!(plan, "pro" | "pro_100" | "pro_200" | "pro_500") {
+        return vec!["Weekly".into()];
+    }
     usage
         .windows
         .iter()
@@ -128,7 +134,6 @@ fn coverage(usage: &QuotaSet) -> Vec<String> {
             "plus" | "business" | "business_standard" | "team" => {
                 matches!(w.window.as_str(), "5-hour" | "Weekly")
             }
-            "pro" | "pro_100" | "pro_200" | "pro_500" => w.window == "Weekly",
             "go" => matches!(w.window.as_str(), "30d" | "Monthly" | "monthly"),
             _ => false,
         })
@@ -534,6 +539,27 @@ mod tests {
                 ).unwrap();
                 assert!(inventory.credits[0].can_use, "applicable={applicable:?}, used={used}");
                 assert!(inventory.credits[0].unavailable_reason.is_none());
+            }
+        }
+    }
+    #[test]
+    fn pro_credit_support_does_not_require_a_weekly_usage_bucket() {
+        for plan in ["pro", "pro_100", "pro_200", "pro_500"] {
+            for missing_windows in [false, true] {
+                let mut snapshot = usage(plan, Some(0), 0.0);
+                if missing_windows {
+                    snapshot.windows = None;
+                } else {
+                    snapshot.windows.as_mut().unwrap().retain(|w| w.window != "Weekly");
+                }
+                let payload = json!({"available_count":4,"credits":[credit("one",None)]});
+                let inventory = parse_inventory(&payload, snapshot.clone()).unwrap();
+                assert!(inventory.credits[0].can_use, "{plan}");
+                assert_eq!(inventory.credits[0].covered_windows, vec!["Weekly"]);
+
+                let mut rejected = payload.clone();
+                rejected["credits"][0]["is_supported_by_plan"] = json!(false);
+                assert!(!parse_inventory(&rejected, snapshot).unwrap().credits[0].can_use);
             }
         }
     }

@@ -15,7 +15,7 @@ import { ActiveAccountBadge } from "./AccountIdentity";
 import { AddIcon, BrowserIcon, CheckIcon, CopyIcon, DeviceIcon, ExternalLinkIcon, FileIcon, FolderIcon, InfoCircleIcon, KeyIcon, NextIcon, RefreshIcon, SpinnerIcon } from "../icons";
 
 export const PROVIDER_LABELS: Record<AccountProvider, string> = { codex: "ChatGPT / Codex", claude: "Claude", antigravity: "Antigravity" };
-type FileVerificationResult = { account: SetupAccount; error?: never } | { error: string; account?: never };
+type FileVerificationResult = { account: SetupAccount; error?: never; notice?: never } | { error: string; account?: never; notice?: never } | { notice: string; account?: never; error?: never };
 
 export function accountSourceLabel({ provider, source }: SetupAccount): string | undefined {
   if (source === "saved") return "Saved in Orbilap";
@@ -178,8 +178,8 @@ export function useAccountEnrollment(reconnectProfileId?: string) {
           if (!mounted.current) break;
           try {
             const account = await importSetupAccount(id, "codex", "", "credentials" in file ? { credentials: file.credentials } : { path: file.path });
-            if (account.alreadyAdded) record({ error: "This account is already added to Orbilap." });
-            else if (seen.has(account.id)) record({ error: "This account is already in the import list." });
+            if (account.alreadyAdded) record({ notice: "This account is already added to Orbilap." });
+            else if (seen.has(account.id)) record({ notice: "This account is already in the import list." });
             else { seen.add(account.id); record({ account }); }
           } catch (error) { record({ error: prettyError(error) }); }
         }

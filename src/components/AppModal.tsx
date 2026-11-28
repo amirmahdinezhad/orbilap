@@ -96,6 +96,11 @@ export function AppModal({
   descriptionId,
 }: AppModalProps) {
   const layer = useContext(ModalLayer);
+  // Keep pointer entrances running if typing starts during the popup animation.
+  const opening = useRef(false);
+  const input = useRef("keyboard");
+  if (open && !opening.current) input.current = document.documentElement.dataset.keyboard === "true" ? "keyboard" : "pointer";
+  opening.current = open;
   const returnFocus = useRef<HTMLElement | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [pageHeader, setPageHeader] = useState<PageHeader | null>(null);
@@ -123,6 +128,7 @@ export function AppModal({
     >
       <DialogContent
         layer={layer}
+        input={input.current}
         className={`card${cardClass ? ` ${cardClass}` : ""}`}
         overlayClassName={overlayClass}
         role={role}

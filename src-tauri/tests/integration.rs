@@ -60,6 +60,7 @@ fn isolated_user_data() -> &'static Path {
 
 fn sample_state() -> AppState {
     AppState {
+        panel_shortcut_error: None,
         settings: SettingsOut {
             open_at_login: true,
         },
@@ -76,7 +77,7 @@ fn app_state_serializes_to_the_frontend_contract() {
     // Renaming a field here silently breaks src/types.ts, so pin the exact set.
     let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
     keys.sort_unstable();
-    let mut expected = ["settings", "app"];
+    let mut expected = ["settings", "app", "panelShortcutError"];
     expected.sort_unstable();
     assert_eq!(keys, expected, "AppState field names are the IPC contract");
 
@@ -90,7 +91,7 @@ fn app_settings_keys_are_camel_case_for_the_ui() {
 
     let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
     keys.sort_unstable();
-    let mut expected = ["refreshIntervalSecs", "usageShowRemaining", "menuBarEnabled", "menuBarProvider", "menuBarWindow", "providerAccents", "usageAppearance", "multiProfile", "autoSwitchEnabled", "codexAccounts", "codexDisplayMode", "codexReset", "workspaceVersion", "activeWorkspaceId", "workspaces"];
+    let mut expected = ["floatingUsage", "refreshIntervalSecs", "usageShowRemaining", "menuBarEnabled", "menuBarProvider", "menuBarWindow", "providerAccents", "usageAppearance", "multiProfile", "panelShortcut", "autoSwitchEnabled", "codexAccounts", "codexDisplayMode", "codexReset", "workspaceVersion", "activeWorkspaceId", "workspaces"];
     expected.sort_unstable();
     assert_eq!(keys, expected, "AppSettings field names are the IPC contract");
 }

@@ -1,7 +1,7 @@
 import {
   Browser, File, Folder, Laptop, Activity, AlertCircle, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Calendar, ChartBar, Check, CheckCircle,
   ChevronDown, ChevronLeft, ChevronRight, Clock, Close, Copy, Download, Edit, Eye, InfoCircle, Lock,
-  Layers, List, Logout, MoreHorizontal, Password, PieChart, Plus, Refresh, Search, Settings, Trash, Type, Undo, User,
+  List, Logout, MoreHorizontal, Password, PieChart, Plus, Refresh, Search, Settings, Trash, Type, Undo, User,
 } from "@neaticons/react";
 import { Settings as SharpSettings } from "@neaticons/react/sharp-stroke";
 
@@ -25,7 +25,16 @@ export const SortDescendingIcon = neat(ArrowUp);
 export const ClockIcon = neat(Clock);
 export const AccountIcon = neat(User);
 export const AlphabetIcon = neat(Type);
-export const BankedResetsIcon = neat(Layers);
+/** Owner-supplied refresh.svg; retain its dashed arc and original stroke weight. */
+export function BankedResetsIcon({ size = 20, className }: IconProps) {
+  return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+    className={className ? `ak-icon ${className}` : "ak-icon"} fill="none" aria-hidden="true" focusable="false">
+    <g stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.55 21.67C18.84 20.54 22 16.64 22 12C22 6.48 17.56 2 12 2C5.33 2 2 7.56 2 7.56M2 7.56V3M2 7.56H4.01H6.44" style={{ strokeWidth: 1.5 }} />
+      <path d="M2 12C2 17.52 6.48 22 12 22" strokeDasharray="3 3" style={{ strokeWidth: 1.5 }} />
+    </g>
+  </svg>;
+}
 export const CapacityIcon = neat(PieChart);
 export const CalendarIcon = neat(Calendar);
 export const DownIcon = neat(ChevronDown);

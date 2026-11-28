@@ -145,8 +145,11 @@ owner request and prior accepted manual verification limits in the security repo
 
 Settings → Updates → **Check for updates** → **What's new** → **Download** →
 **Install & relaunch**. Manual checks reveal previously skipped releases.
-Opt-in daily automatic checks respect skips, can download with the panel closed,
-and wait for explicit installation. Release notes remain visible after download.
+Automatic checks run on app launch and daily while running, defaulting on for
+missing preferences and preserving saved opt-outs. They respect skipped versions
+and never download. Unseen offers mark Settings and the Updates tab with a dot;
+viewing Updates acknowledges that version. Download and installation each require
+an explicit user action. Release notes remain visible after download.
 Drafts and prereleases do not become the public latest update.
 
 ## Packaging

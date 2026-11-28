@@ -8,6 +8,7 @@ import { Switch } from "./ui/switch";
 import { Checkbox } from "./ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { TabsContent } from "./ui/tabs";
+import { activeProviderAccountId } from "../accountActivity";
 import { WorkspaceMenuBar } from "./WorkspaceMenuBar";
 
 const EMPTY_CLAUDE_ACCOUNTS: ClaudeProfile[] = [];
@@ -34,10 +35,11 @@ interface Props {
   onChanged: (state: AppState) => void;
   onBusyChange: (busy: boolean) => void;
   claudeAccounts?: ClaudeProfile[];
+  floatingSettings?: (providers: ("codex" | "claude" | "antigravity")[], activeAccounts: Partial<Record<"codex" | "claude" | "antigravity",string>>, activeAccountNames: Partial<Record<"codex" | "claude" | "antigravity",string>>) => ReactNode;
 }
 
 /** Workspace usage and menu-bar panels within the shared Settings dialog. */
-export function WorkspaceSettings({ open, workspace, state, profiles, claudeAccounts = EMPTY_CLAUDE_ACCOUNTS, onBusyChange, onChanged }: Props) {
+export function WorkspaceSettings({ open, workspace, state, profiles, claudeAccounts = EMPTY_CLAUDE_ACCOUNTS, onBusyChange, onChanged, floatingSettings }: Props) {
   const [googleAccounts, setGoogleAccounts] = useState<SetupAccount[]>([]);
   useEffect(() => { if (!open) return; let current = true; void antigravityAccounts().then((a) => { if (current) setGoogleAccounts(a); }).catch(() => {}); return () => { current = false; }; }, [open, workspace.id]);
   const descriptionPrefix = useId();
@@ -58,8 +60,6 @@ export function WorkspaceSettings({ open, workspace, state, profiles, claudeAcco
     const descriptionId = `${descriptionPrefix}-${label.toLowerCase().replace(/ /g, "-")}`;
     return <Row name={label} description={description} descriptionId={descriptionId}><Switch aria-label={label} aria-describedby={description ? descriptionId : undefined} checked={checked} disabled={busy} onCheckedChange={(value) => void saveUsage(patch(value))} /></Row>;
   };
-  const colorThresholds = workspace.usage.warningThresholds ?? [75, 90, 95];
-  const colorLevels = [75, 90, 95];
   return <>
       {error ? <ErrorToast message={error} /> : null}
       <TabsContent value="usage" className="workspace-usage">
@@ -76,11 +76,7 @@ export function WorkspaceSettings({ open, workspace, state, profiles, claudeAcco
         <section className="settings-section" aria-labelledby={`${descriptionPrefix}-resets`}>
           <h3 className="settings-subtitle" id={`${descriptionPrefix}-resets`}>Codex resets</h3>
           <div className="settings-group usage-resets-group">
-            {toggle("Show reset updates", workspace.usage.showCodexResets ?? true, (showCodexResets) => ({ showCodexResets }), "Announced and recently confirmed resets.")}
-            <label className="checkbox-row usage-predictions">
-              <Checkbox persistIndicator aria-label="Include predictions" aria-describedby={`${descriptionPrefix}-prediction-help`} checked={workspace.usage.showProbableResets} disabled={busy || !(workspace.usage.showCodexResets ?? true)} onCheckedChange={(checked) => void saveUsage({ showProbableResets: checked === true })} />
-              <span><span className="setting-name checkbox-label">Include predictions</span><span className="setting-desc" id={`${descriptionPrefix}-prediction-help`}>Estimates only. Resets aren’t guaranteed.</span></span>
-            </label>
+            {toggle("Show reset updates", workspace.usage.showCodexResets ?? true, (showCodexResets) => ({ showCodexResets }), "Announcements and predictions. Estimates aren’t guaranteed.")}
           </div>
         </section>
         <section className="settings-section" aria-label="Automatic switching">
@@ -122,30 +118,27 @@ export function WorkspaceSettings({ open, workspace, state, profiles, claudeAcco
         ) : null}
       </TabsContent>
       <TabsContent value="menu-bar" className="menubar-settings">
+        <section className="display-settings-panel" aria-labelledby={`${descriptionPrefix}-menu-bar-location`}>
+        <h3 className="display-section-title" id={`${descriptionPrefix}-menu-bar-location`}>Menu bar</h3>
         <section className="settings-section"><div className="settings-group">
           {toggle("Menu bar usage", workspace.usage.menuBarEnabled, (menuBarEnabled) => ({ menuBarEnabled }))}
         </div></section>
         {workspace.usage.menuBarEnabled ? <WorkspaceMenuBar workspace={workspace} app={state.app} accounts={accounts} claudeAccounts={claudeAccounts} googleAccounts={googleAccounts} busy={busy} onSave={saveUsage} /> : null}
-        {workspace.usage.menuBarEnabled ? <section className="settings-section menubar-colors" aria-label="Limit colors"><div className="settings-group">
-          {toggle("Change colors near limits", workspace.usage.warningColors ?? false, (warningColors) => ({ warningColors }))}
-          {workspace.usage.warningColors ? <div className="workspace-limit-colors" role="group" aria-label="Color thresholds">
-            <div className="menubar-thresholds">
-              {colorLevels.map((level) => {
-                const tone = level >= 95 ? "critical" : level >= 90 ? "high" : level >= 75 ? "warning" : "early";
-                const name = level >= 95 ? "Critical" : level >= 90 ? "High usage" : level >= 75 ? "Warning" : "Early warning";
-                const id = `${descriptionPrefix}-color-${level}`;
-                return <label className={`menubar-threshold is-${tone}`} key={level}>
-                  <span className="menubar-threshold-dot" aria-hidden="true" />
-                  <span className="menubar-threshold-name" id={id}>{name}</span>
-                  <span className="menubar-threshold-value">{level}% used</span>
-                  <Switch aria-label={`Change color at ${level}% used`} aria-describedby={id} checked={colorThresholds.includes(level)} disabled={busy} onCheckedChange={(enabled) => void saveUsage({ warningThresholds: enabled === true ? colorLevels.filter((n) => n === level || colorThresholds.includes(n)) : colorLevels.filter((n) => n !== level && colorThresholds.includes(n)) })} />
-                </label>;
-              })}
-            </div>
-
-          </div> : null}
-          <p className="setting-note">At each enabled level, the icon and usage change to the matching color.</p>
-        </div></section> : <p className="setting-note">Turn on menu bar usage to choose its source and appearance.</p>}
+        {workspace.usage.menuBarEnabled ? <section className="settings-section menubar-colors" aria-label="Limit colors">
+          <div className="settings-group">
+            {toggle("Limit colors", workspace.usage.warningColors ?? false, (warningColors) => ({ warningColors }), "Turn red below 15% remaining.")}
+          </div>
+        </section> : <p className="setting-note">Turn on menu bar usage to choose its source and appearance.</p>}
+        </section>
+        {floatingSettings ? <section className="display-settings-panel" aria-labelledby={`${descriptionPrefix}-floating-location`}>
+        <h3 className="display-section-title" id={`${descriptionPrefix}-floating-location`}>Floating</h3>
+        {floatingSettings?.(([{id:"codex",items:profiles?.profiles ?? []},{id:"claude",items:claudeAccounts},{id:"antigravity",items:googleAccounts}] as const)
+          .filter(group=>activeProviderAccountId(group.id,workspace,group.items)).map(group=>group.id),
+          Object.fromEntries(([{id:"codex",items:profiles?.profiles ?? []},{id:"claude",items:claudeAccounts},{id:"antigravity",items:googleAccounts}] as const)
+            .flatMap(group=>{const id=activeProviderAccountId(group.id,workspace,group.items);return id?[[group.id,id]]:[]})),
+          Object.fromEntries(([{id:"codex",items:profiles?.profiles ?? []},{id:"claude",items:claudeAccounts},{id:"antigravity",items:googleAccounts}] as const)
+            .flatMap(group=>{const id=activeProviderAccountId(group.id,workspace,group.items);const account=group.items.find(item=>item.id===id);return account?[[group.id,account.name]]:[]})))}
+        </section> : null}
       </TabsContent>
   </>;
 }

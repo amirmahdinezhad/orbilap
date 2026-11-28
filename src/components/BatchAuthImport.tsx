@@ -12,7 +12,7 @@ import { DeviceSettingsEntry } from "./DeviceSync";
 const needsRenewal = (error?: string) =>
   /^session (expired|rejected|could not be renewed)\b/i.test(error ?? "");
 
-type Row = AuthFileCandidate & { id: number; account?: SetupAccount };
+type Row = AuthFileCandidate & { id: number; account?: SetupAccount; notice?: string };
 
 /** Review files in memory; native staging verifies them before the existing workspace review. */
 export function BatchAuthImport({ draft, onDirtyChange, onReadingChange, onContinue, signInContent }: {
@@ -33,9 +33,9 @@ export function BatchAuthImport({ draft, onDirtyChange, onReadingChange, onConti
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; onDirtyChange(false); onReadingChange(false); }; }, [onDirtyChange, onReadingChange]);
   useEffect(() => { onDirtyChange(rows.length > 0); }, [rows.length, onDirtyChange]);
   const locked = draft.busy || verifying || reading || devicesBusy;
-  const ready = rows.filter(row => row.file && !row.account && !needsRenewal(row.error));
+  const ready = rows.filter(row => row.file && !row.account && !row.notice && !needsRenewal(row.error));
   const verified = rows.flatMap(row => row.account ? [row.account] : []);
-  const showVerify = verifying || (!verified.length && (!rows.length || ready.length > 0)) || ready.some(row => !row.error);
+  const showVerify = verifying || !verified.length || ready.some(row => !row.error);
   const append = (files: AuthFileCandidate[]) => {
     setNotice(rows.length + files.length > 20 ? "You can import up to 20 files at a time. Extra files weren’t added." : null);
     setRows(previous => {
@@ -61,11 +61,11 @@ export function BatchAuthImport({ draft, onDirtyChange, onReadingChange, onConti
         updated = updated.map(row => {
           if (row.id !== ready[index].id) return row;
           if (result.account) {
-            if (identities.has(result.account.id)) return { ...row, error: "This account is already in the import list." };
+            if (identities.has(result.account.id)) return { ...row, notice: "This account is already in the import list." };
             identities.add(result.account.id);
             return { ...row, error: undefined, account: result.account };
           }
-          return { ...row, error: result.error };
+          return { ...row, error: result.error, notice: result.notice };
         });
         setRows(updated);
       });
@@ -77,7 +77,7 @@ export function BatchAuthImport({ draft, onDirtyChange, onReadingChange, onConti
     void draft.start("codex", "browser", "", account => {
       if (!mounted.current) return;
       if (account.alreadyAdded || verified.some(item => item.id === account.id)) {
-        setNotice(account.alreadyAdded ? "This account is already added to Orbilap." : "This account is already in the import list.");
+        setRows(previous => previous.map(item => item.id === row.id ? { ...item, error: undefined, notice: account.alreadyAdded ? "This account is already added to Orbilap." : "This account is already in the import list." } : item));
         return;
       }
       const updated = rows.map(item => item.id === row.id ? { ...item, error: undefined, account } : item);
@@ -93,11 +93,11 @@ export function BatchAuthImport({ draft, onDirtyChange, onReadingChange, onConti
       onReadingChange={value => { setReading(value); onReadingChange(value); }} />
     {notice ? <ErrorToast message={notice} /> : null}
     {rows.length ? <>
-      <div className="batch-auth-summary"><strong>{rows.length} {rows.length === 1 ? "file" : "files"}</strong><span role="status">{verifying ? "Verifying accounts…" : verified.length ? `${verified.length} verified` : "Not verified yet"}</span></div>
-      <ul className="batch-auth-list" ref={list} tabIndex={-1} aria-label="Selected login files">{rows.map((row, index) => <li key={row.id} className={`batch-auth-row${row.error ? " has-error" : ""}${row.account ? " is-verified" : ""}`}>
-        <span className="batch-auth-mark" aria-hidden="true">{verifying && row.file && !row.account && !row.error ? <SpinnerIcon size={17} /> : row.account ? <TickIcon size={17} /> : <KeyIcon size={17} />}</span>
+      <div className="batch-auth-summary"><strong>{rows.length} {rows.length === 1 ? "file" : "files"}</strong><span role="status">{verifying ? "Verifying accounts…" : verified.length ? `${verified.length} verified` : rows.some(row => row.notice) ? "Already added" : "Not verified yet"}</span></div>
+      <ul className="batch-auth-list" ref={list} tabIndex={-1} aria-label="Selected login files">{rows.map((row, index) => <li key={row.id} className={`batch-auth-row${row.error ? " has-error" : ""}${row.account || row.notice ? " is-verified" : ""}`}>
+        <span className="batch-auth-mark" aria-hidden="true">{verifying && row.file && !row.account && !row.notice && !row.error ? <SpinnerIcon size={17} /> : row.account || row.notice ? <TickIcon size={17} /> : <KeyIcon size={17} />}</span>
         <div className="batch-auth-identity"><div className="batch-auth-title"><Tooltip content={row.account?.name ?? row.name}><strong dir="auto">{row.account?.name ?? row.name}</strong></Tooltip>{row.account ? <PlanBadge subscription={row.account.subscription} /> : null}</div>
-          {row.account ? <span dir="auto">{row.account.email}</span> : <><ErrorToast message={row.error && !needsRenewal(row.error) ? `${row.name}: ${row.error}` : null} /><span>{needsRenewal(row.error) ? "Sign in to ChatGPT again" : row.error ? "Verification failed" : "Ready to verify"}</span></>}
+          {row.notice ? <span role="status">{row.notice}</span> : row.account ? <span dir="auto">{row.account.email}</span> : <><ErrorToast message={row.error && !needsRenewal(row.error) ? `${row.name}: ${row.error}` : null} /><span>{needsRenewal(row.error) ? "Sign in to ChatGPT again" : row.error ? "Verification failed" : "Ready to verify"}</span></>}
           {row.account ? <DeviceSettingsEntry account={{ id: row.account.id, provider: "codex" }} label={row.account.name}
             session={draft.getSession} disabled={locked} onBusyChange={setDevicesBusy} /> : null}
         </div>

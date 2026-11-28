@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import type { AppSettings } from "../types";
@@ -19,14 +19,20 @@ vi.mock("../api", () => ({
     makeState({ app: { ...makeState().app, ...settings } }),
   ),
   setSettings: vi.fn(),
+  setPanelShortcutRecording: vi.fn(async () => {}),
   quitApp: vi.fn(async () => {}),
   prettyError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
 }));
 
 import { SettingsModal, SKIPPED_UPDATE_KEY } from "./SettingsModal";
 import { makeState } from "../test/fixtures";
+import { DEFAULT_DISPLAY_PREFS } from "../displayPrefs";
+import { SEEN_UPDATES_KEY } from "../updateNotices";
 
 function renderModal(initialState = makeState(), notify = vi.fn()) {
+  // Manual update scenarios opt out of launch checks; retain all other saved preferences.
+  localStorage.setItem("orbilap.displayPrefs", JSON.stringify({ ...DEFAULT_DISPLAY_PREFS,
+    ...JSON.parse(localStorage.getItem("orbilap.displayPrefs") ?? "{}"), checkUpdatesOnLaunch: false }));
   function SettingsHarness() {
     const [state, setState] = useState(initialState);
     return (
@@ -43,7 +49,7 @@ function renderModal(initialState = makeState(), notify = vi.fn()) {
 }
 
 async function openUpdatesTab(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("tab", { name: "Updates" }));
+  await user.click(screen.getByRole("tab", { name: /^Updates/ }));
 }
 
 function fakeUpdate() {
@@ -69,6 +75,68 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SettingsModal updates", () => {
+  it("rechecks once per day while closed without downloading, including a newer release", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-28T00:00:00Z"));
+      const first = fakeUpdate(), newer = { ...fakeUpdate(), version: "9.9.10" };
+      mockCheck.mockResolvedValueOnce(first).mockResolvedValue(newer);
+      const view = render(<SettingsModal open={false} onClose={vi.fn()} state={makeState()} onChanged={vi.fn()} notify={vi.fn()} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(mockCheck).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(86_399_998); });
+      expect(mockCheck).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
+      expect(mockCheck).toHaveBeenCalledTimes(2);
+      expect(first.download).not.toHaveBeenCalled();
+      expect(newer.download).not.toHaveBeenCalled();
+      view.unmount();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("keeps the unread offer through General and closing, acknowledges on Updates, and remembers it across launches", async () => {
+    const user = userEvent.setup(), update = fakeUpdate(), unread = vi.fn();
+    mockCheck.mockResolvedValue(update);
+    const props = { onClose: vi.fn(), state: makeState(), onChanged: vi.fn(), notify: vi.fn(), onUpdateUnreadChange: unread };
+    const view = render(<SettingsModal {...props} open={false} />);
+    await waitFor(() => expect(unread).toHaveBeenLastCalledWith(true));
+    expect(update.download).not.toHaveBeenCalled();
+    view.rerender(<SettingsModal {...props} open />);
+    expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Updates · Update available" }).querySelector(".update-dot")).toBeInTheDocument();
+    expect(localStorage.getItem(SEEN_UPDATES_KEY)).toBeNull();
+    view.rerender(<SettingsModal {...props} open={false} />);
+    expect(unread).toHaveBeenLastCalledWith(true);
+    view.rerender(<SettingsModal {...props} open />);
+    await user.click(screen.getByRole("tab", { name: "Updates · Update available" }));
+    expect(await screen.findByRole("button", { name: "Download update" })).toBeVisible();
+    await waitFor(() => expect(unread).toHaveBeenLastCalledWith(false));
+    expect(JSON.parse(localStorage.getItem(SEEN_UPDATES_KEY)!)).toContain(update.version);
+    expect(screen.queryByRole("tab", { name: "Updates · Update available" })).not.toBeInTheDocument();
+    expect(update.download).not.toHaveBeenCalled();
+    view.unmount(); unread.mockClear();
+    const again = render(<SettingsModal {...props} open={false} />);
+    await waitFor(() => expect(mockCheck).toHaveBeenCalledTimes(2));
+    expect(unread).not.toHaveBeenCalledWith(true);
+    again.unmount();
+    mockCheck.mockResolvedValue({ ...update, version: "9.9.10" });
+    render(<SettingsModal {...props} open={false} />);
+    await waitFor(() => expect(unread).toHaveBeenLastCalledWith(true));
+    expect(update.install).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit automatic-check opt-out and handles background failures quietly", async () => {
+    const notify = vi.fn(), unread = vi.fn();
+    const props = { open: false, onClose: vi.fn(), state: makeState(), onChanged: vi.fn(), notify, onUpdateUnreadChange: unread };
+    const view = render(<SettingsModal {...props} display={{ ...DEFAULT_DISPLAY_PREFS, checkUpdatesOnLaunch: false }} />);
+    expect(mockCheck).not.toHaveBeenCalled();
+    mockCheck.mockRejectedValueOnce(new Error("Offline"));
+    view.rerender(<SettingsModal {...props} display={DEFAULT_DISPLAY_PREFS} />);
+    await waitFor(() => expect(mockCheck).toHaveBeenCalledTimes(1));
+    expect(notify).not.toHaveBeenCalled();
+    expect(unread).not.toHaveBeenCalledWith(true);
+  });
+
   it("keeps checking feedback in notifications and prevents duplicate requests", async () => {
     const user = userEvent.setup(), notify = vi.fn();
     let resolveCheck!: (value: null) => void;
@@ -230,25 +298,16 @@ describe("SettingsModal updates", () => {
 
 
 describe("restored global settings tabs", () => {
-  it("keeps Clock format available and saves it in both deadline modes", async () => {
-    const user = userEvent.setup();
-    const view = renderModal();
-    expect(screen.getByRole("radio", { name: "Time remaining" })).toBeChecked();
-    expect(screen.getByRole("region", { name: "Clock format" })).toBeVisible();
-    const clock = screen.getByRole("radio", { name: "24-hour" });
-    expect(clock).toBeChecked();
-    clock.focus(); await user.keyboard("{ArrowRight}"); await user.keyboard(" ");
-    expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
-    expect(JSON.parse(localStorage.getItem("orbilap.displayPrefs")!)).toMatchObject({ deadlineDisplay: "remaining", timeFormat: "12h" });
-    await user.click(screen.getByRole("radio", { name: "Date & time" }));
-    expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
-    const remaining = screen.getByRole("radio", { name: "Time remaining" });
-    await user.click(remaining);
-    expect(remaining).toHaveFocus();
-    expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
-    view.unmount(); renderModal();
-    expect(screen.getByRole("radio", { name: "Time remaining" })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "AM/PM" })).toBeChecked();
+  it("hides retired deadline and clock controls, including with saved 12-hour time", () => {
+    localStorage.setItem("orbilap.displayPrefs", JSON.stringify({ ...DEFAULT_DISPLAY_PREFS, timeFormat: "12h" }));
+    renderModal();
+    for (const name of ["Deadline display", "Clock format"]) {
+      expect(screen.queryByRole("region", { name })).not.toBeInTheDocument();
+    }
+    for (const name of ["Time remaining", "Date & time", "24-hour", "AM/PM"]) {
+      expect(screen.queryByRole("radio", { name })).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole("radiogroup", { name: "Color theme" })).toBeVisible();
   });
   it("shows General and Updates, while keeping alerts and menu-bar settings in the workspace", async () => {
     const user = userEvent.setup(); renderModal();
@@ -282,7 +341,7 @@ describe("restored global settings tabs", () => {
   it("resets global values without replacing workspaces or account preferences", async () => {
     const { setAppSettings } = await import("../api"); const user = userEvent.setup(); renderModal();
     await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
-    expect(setAppSettings).toHaveBeenCalledExactlyOnceWith({ refreshIntervalSecs: 60, usageShowRemaining: true });
+    expect(setAppSettings).toHaveBeenCalledExactlyOnceWith({ refreshIntervalSecs: 60, usageShowRemaining: true, panelShortcut: { enabled: false, accelerator: "super+shift+KeyO" }, floatingUsage: { enabled: false, provider: "codex", mode: "badge" } });
   });
   it("supports keyboard navigation between tabs", async () => {
     const user = userEvent.setup(); renderModal(); const general = screen.getByRole("tab", { name: "General" });
@@ -292,15 +351,18 @@ describe("restored global settings tabs", () => {
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", updates.id);
     await user.keyboard("{Home}"); expect(general).toHaveFocus();
   });
-  it("automatically downloads while closed and keeps installation ready when reopened", async () => {
+  it("checks silently while closed and only downloads after the user's choice", async () => {
     const update = fakeUpdate(); mockCheck.mockResolvedValue(update);
     const { DEFAULT_DISPLAY_PREFS } = await import("../displayPrefs");
     const props = { onClose: vi.fn(), state: makeState(), onChanged: vi.fn(), notify: vi.fn(), display: { ...DEFAULT_DISPLAY_PREFS, checkUpdatesOnLaunch: true } };
     const view = render(<SettingsModal {...props} open={false} />);
-    await waitFor(() => expect(update.download).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockCheck).toHaveBeenCalledTimes(1));
+    expect(update.download).not.toHaveBeenCalled();
+    expect(props.notify).not.toHaveBeenCalled();
     expect(update.install).not.toHaveBeenCalled();
     view.rerender(<SettingsModal {...props} open />);
     const user = userEvent.setup(); await openUpdatesTab(user);
+    await user.click(await screen.findByRole("button", { name: "Download update" }));
     expect(await screen.findByRole("button", { name: "Install & relaunch" })).toBeInTheDocument();
     expect(mockCheck).toHaveBeenCalledTimes(1);
     expect(update.install).not.toHaveBeenCalled();

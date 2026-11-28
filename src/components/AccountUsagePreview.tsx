@@ -1,9 +1,9 @@
 import { ErrorToast } from "./Toast";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { QuotaSet, QuotaWindow } from "../api";
 import { accountWindowLabel, canonicalAccountWindow } from "../accountPrefs";
 import { useAccountClock } from "../useAccountClock";
-import { usagePace } from "../usage";
+import { remainingPercent, usagePace } from "../usage";
 import { Tooltip } from "./ui/tooltip";
 import { NextIcon, RefreshIcon } from "../icons";
 import { useTimeDisplay } from "../displayPrefsContext";
@@ -90,7 +90,7 @@ export function AccountUsagePreview({ windows, accountName, showRemaining = true
     const period = key ? accountWindowLabel(key) : window.window;
     return labelPrefix ? `${labelPrefix} · ${period}` : period;
   };
-  const shown = (window: QuotaWindow) => Math.round(Math.min(100, Math.max(0, showRemaining ? 100 - window.percent : window.percent)));
+  const shown = (window: QuotaWindow) => showRemaining ? remainingPercent(window.percent) : Math.round(Math.min(100, Math.max(0, window.percent)));
   return <div className="account-usage-preview" role="group" aria-label={`Usage for ${accountName}`} aria-describedby={descriptionId}>
     <span className="sr-only" id={descriptionId}>{windows.map(window => `${label(window)} ${shown(window)}% ${showRemaining ? "remaining" : "used"}`).join(", ")}</span>
     <div className="account-usage-metrics">{windows.map(window => <div className="account-usage-metric" data-tone={window.percent >= 95 ? "danger" : window.percent >= 75 ? "warning" : "healthy"} key={window.window}>
@@ -101,8 +101,8 @@ export function AccountUsagePreview({ windows, accountName, showRemaining = true
   </div>;
 }
 
-export function AdditionalLimits({ windows, accountName, showRemaining, label }: {
-  windows: QuotaWindow[]; accountName: string; showRemaining: boolean; label?: string;
+export function AdditionalLimits({ windows, accountName, showRemaining, label, children }: {
+  windows: QuotaWindow[]; accountName: string; showRemaining: boolean; label?: string; children?: ReactNode;
 }) {
   const contentId = useId();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -135,12 +135,11 @@ export function AdditionalLimits({ windows, accountName, showRemaining, label }:
         setDisclosure(({ open }) => ({ open: !open, animate }));
       }}>
       <NextIcon className="account-extra-chevron" size={16} />
-      <span>{label ?? "Additional limits"}</span>{" "}
-      {windows.length ? <span className="provider-count">{windows.length}</span> : null}
+      <span>{label ?? "Additional limits"}</span>
     </button>
     <div id={contentId} ref={contentRef} className="account-extra-content" inert={!disclosure.open} aria-hidden={!disclosure.open}>
       <div className="account-extra-clip">
-        <AccountUsagePreview windows={windows} accountName={`${accountName} additional limits`} showRemaining={showRemaining} />
+        {children ?? <AccountUsagePreview windows={windows} accountName={`${accountName} additional limits`} showRemaining={showRemaining} />}
       </div>
     </div>
   </div>;

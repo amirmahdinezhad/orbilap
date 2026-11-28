@@ -2,6 +2,443 @@
 
 ## Current system
 
+SettingsDisclosure uses the shared Button --button-min-height token at 3rem,
+matching 48px settings rows. This prevents the later dialog Button rule from
+shrinking Appearance to 36px when closed. Keep the same header height when open.
+Applied emil-design-eng / animate: static sizing correction, no new motion.
+
+Display limit model labels and their options share a 1rem column gap in
+UsageLimitChoices for both Menu bar and Floating (28 November 2026). Keep
+the model column aligned across Gemini and Claude & GPT rows. Applied
+emil-design-eng and animate: static spacing adjustment; no new motion.
+
+All visible radio marks share ui-radio-mark and the persistent RadioIndicator:
+16px outer circle, 1px outline, 6px accent dot and inset surface gap. RadioOption
+cards use the same mark as standalone limit controls; card selection backgrounds
+remain. Shared 160ms dot opacity/scale and border transitions are reversible;
+keyboard and reduced motion remain immediate. Applied emil-design-eng and animate.
+This supersedes the separate RadioOption mark treatment below.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Cards use a filled 17px mark and 7px reverse dot | Shared 16px outline and 6px accent dot everywhere | Owner requested consistent radio shapes |
+
+Appearance disclosure keeps its existing inset container without an additional
+background on pointer hover or press. The shared SettingsDisclosure trigger owns
+this treatment in both themes; keyboard focus and reveal behavior remain.
+Applied emil-design-eng and animate: static hover paint removal, no new motion.
+
+Display expansion and collapse use shared SettingsReveal. Keep outgoing content
+painted for its 200ms collapse, immediately inert and aria-hidden, and cancel
+pending removal if reopened. Persistent wrappers transition grid tracks and
+opacity using --ease-out in both directions. Appearance uses the shared Button
+with aria-expanded/aria-controls plus this reveal, replacing native details whose
+content disappeared immediately. Provider limits retain their switch-only action.
+RadioGroupItem retains its dot via forceMount, fading/scaling .7 → 1 over 160ms;
+the outer border color follows in 160ms. Keyboard modality and reduced motion
+suppress movement/transitions. Preserve ring/dot contrast and control geometry.
+Applied emil-design-eng and animate: state indication and reversible changes,
+CSS transitions, no new dependency. This supersedes the entry-only reveal below.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Content disappears on close | Retain outgoing content through collapse | Allow exit motion and rapid reversal |
+| Native Appearance details toggles instantly | Shared accessible Button and reversible reveal | Match the other Display expansions |
+| Radio dot mounts/unmounts abruptly | Persistent dot fades and scales | Smooth checked/unchecked feedback |
+
+Floating orb edge correction (28 November 2026): remove the decorative inset
+outline and inherited transparent button border. The SVG now occupies the full
+60pt circle without border-induced scaling. Use a 4pt gray rail beneath the 5pt
+progress stroke to keep rail antialiasing inside the white/colored arc. Preserve
+round caps, provider colors, circular hit area and native drag/open behavior.
+Applied emil-design-eng / animate: static paint correction; no new motion.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Inset rim, 58pt SVG content and same-width rail under progress | Borderless 60pt SVG and inset 4pt rail | Remove extra contour and rail fringe around progress |
+
+Duplicate auth.json imports show a shared success tick and an inline
+explanation that the account is already added to Orbilap (or in the import list).
+Omit the separate Added line per owner feedback. They do not show Verification failed, danger styling, an error toast or error
+recovery help. Keep them outside the new-account selection/commit and skip repeat
+verification. Mixed batches can continue with new verified accounts. Applied
+emil-design-eng / animate: static state feedback; no new motion or control styles.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Existing account shown as failed with error toast | Inline existing-account explanation with success tick | An existing account is an informational result |
+
+
+Omit the static Choose one limit / Select a limit helper lines in Floating and
+Menu bar per the owner’s request. Preserve loading, unavailable/no-limit status,
+accessible control labels and selection behavior. Applied emil-design-eng; no new
+motion under animate’s purpose gate.
+
+Standalone radio controls keep the inset surface inside the selected outer ring;
+paint the ring and 6px center dot with the shared accent. The 16px control and 1px
+border leave a visible 4px surface-colored gap around the dot. Avoid filling the
+entire selected radio: the earlier light fill merged with its dot. Reuse theme
+variables, focus, disabled and pointer behavior. Apply emil-design-eng and animate:
+static contrast correction, no new motion. RadioOption cards retain their existing
+separate mark treatment.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Selected radio fills its whole circle with accent and a white dot | Accent outline and dot separated by inset material | Owner could not distinguish the dot and surrounding ring |
+
+Floating limits use one shared Radix RadioGroup per provider, with circular
+RadioGroupItem controls and arrow-key navigation. Menu bar limits keep checkboxes
+for multiple selection. UsageLimitChoices shares model grouping, labels and spacing
+through its single variant. Preserve private saved windows, unavailable choices,
+cache-only options and existing automatic reveal. Apply emil-design-eng and animate:
+reuse shared control states and reveal motion; no additional motion/dependency.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Floating uses checkboxes despite allowing one limit | One radio group per provider | Owner requested correct single-choice semantics |
+
+Providers & limits heading and its list share display-provider-section in both
+Menu bar and Floating. Keep a .25rem internal gap and 1.5rem separation above
+the group; reset the heading margin inside that shared layout. This makes the
+heading belong visually to its list. Apply emil-design-eng; no new motion under
+animate’s purpose gate. Keep shared control geometry and interaction behavior.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Heading separated from its list and visually attached above | Heading and list grouped with 4px internal gap and 24px top margin | Owner requested clearer section association |
+
+Menu bar preview uses a compact 3.5rem minimum height and .75rem vertical
+padding, per the owner’s screenshot feedback (28 November 2026). Keep its
+readout, inset material, horizontal padding and group radius. Floating retains
+its existing preview height. Apply emil-design-eng; this static spacing change
+adds no motion under animate’s frequency/purpose gate.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Menu bar preview has 6rem minimum height | 3.5rem with .75rem vertical padding | Reduce empty space around the sample |
+
+Display refinement (28 November 2026): show Menu bar and Floating as two titled
+sections on the same Display page. The owner rejected navigation nested inside
+Settings tabs; remove the location selector and its state. Keep provider switches.
+Enabled providers automatically show limit choices directly below their switch in
+both Menu bar and Floating. Remove the separate Limits disclosure, summary and
+click. Saved choices survive disabling a service. Preserve provider/account
+eligibility, busy locks, loading/errors and existing reads/saves. UsageLimitsReveal
+composes SettingsReveal with reversible 200ms home-style grid/opacity motion;
+keyboard and reduced motion are immediate. No new library.
+
+Both locations use the same quiet display-preview stage in the home inset
+material and group radius. Menu bar samples use a restrained 16px readout without
+a second pill frame. Floating places its existing synthetic orb above Providers
+& limits, separate from its enable switch; the enclosing section supplies the Floating heading.
+Keep account identity, master switches, Appearance and Limit colors available.
+Reuse existing controls, typography, focus, theme and pointer behavior. Applied
+emil-design-eng and animate: Appearance and provider limits share SettingsReveal motion above.
+No additional dependencies. This refines the
+existing Display language; actual tray visual acceptance remains Review because
+native and browser automation are unavailable in this session.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Limits disclosure requires a second click | Enabled provider reveals limits automatically | Owner requested one action in Menu bar and Floating |
+| Large menu-bar sample in an outlined pill | Smaller sample on a quiet shared preview stage | Give the preview a clear, restrained role |
+| Floating preview below all options and repeated location heading | Preview above providers, matching Menu bar hierarchy | Make both locations read in the same order |
+
+
+Settings tabs use `--tab-content-gap: 0.375rem` (6px) below navigation.
+Display has no second navigation bar. Keep control geometry and existing pointer,
+keyboard and reduced-motion behavior. This static layout adds no motion.
+
+Reset predictions are always included when Show reset updates is enabled, including
+legacy false preferences. Include predictions is removed. The owner accepted
+and removed the temporary home sample; only live reset data renders. Reuse the
+shared circular close Button, focus recovery and snapRemoval (instant keyboard
+and reduced motion); no new motion.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Separate Include predictions checkbox | Predictions included with reset updates | Owner requested automatic predictions |
+| Development home sample | Live reset data only | Owner finished reviewing the sample |
+
+Key combination is disabled while Enable shortcut is off. Opening the popup shows
+the saved combination immediately; Save shortcut requires a changed combination.
+Shared AppModal records opening input modality so typing cannot interrupt a
+pointer entrance. Keyboard opening/exit and reduced motion retain instant behavior.
+
+Key combination opens the existing compact AppModal above Settings. Keep the saved
+combination in its General row; recording, validation and Cancel / Save shortcut
+belong inside the popup, with active guidance below the shared action-row.
+Reuse workspace-action-popup, workspace-form, Button and native capture behavior.
+Restore focus to the trigger on dismissal; lock dismissal and capture while saving.
+Apply emil-design-eng and animate: reuse shared modal motion and reduced-motion
+rules; key recording has no added motion.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Shortcut recording and actions expand inline in General | Recording and actions live in a compact popup | Owner requested the action inside a popup |
+
+
+Deadlines always use Time remaining, including legacy saved Date & time choices.
+General exposes neither Deadline display nor Clock format. Exact timestamps
+always use 24-hour time, including legacy saved AM/PM preferences. Reuse the existing section spacing and controls;
+no new motion.
+
+Owner removed five static helper lines from General, Updates and Menu bar
+preview. Preserve the preview’s accessible sample label and shortcut recording
+instructions only while recording; remove dangling description references.
+Reuse existing heading/section spacing and controls; no added motion.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Five static helper lines beneath settings | Settings retain headings and controls without those helper lines | Owner requested less explanatory copy |
+
+Limit colors is one workspace switch in Settings → Display → Menu bar, using
+shared setting-row and Switch styling. It also controls Floating warning fills.
+Only less than 15% remaining (strictly more than 85% used) turns red. Exactly
+15% remaining keeps the normal color. Unknown/expired data stays unfilled/muted;
+turning the switch off restores normal colors. Legacy saved thresholds are
+retained for compatibility but ignored. No additional motion: apply Emil and
+animate's frequency gate, retaining shared focus/pointer/reduced-motion behavior.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Limit colors disclosure, master and three color-level switches | One Limit colors switch, with fixed red below 15% remaining | Match the owner's single-rule choice |
+
+
+Settings → Display shows Menu bar followed by Floating in the same scroll area,
+with shared heading typography, a quiet divider and section spacing. Both surfaces
+stay mounted and directly available. Keep independent selections, open details
+and pending saves. There is no location-navigation state or nested tab bar.
+Menu bar shows its master switch, full-width sample, Appearance disclosure,
+Providers & limits and a single Limit colors switch. Keep provider/account identity and
+limit choices directly available when enabled; Appearance starts closed with its
+saved format summary. The shared SettingsDisclosure composes DisclosureSummary
+and native details/summary: standard setting typography, inset material, chevron,
+native keyboard expansion and shared focus token, with no added motion. Use the
+existing shared radio and switch controls inside. Do not change provider behavior,
+account eligibility, saved limit keys, themes or shared control geometry.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Nested Menu bar / Floating selector inside Display | Two titled sections in one scroll area | Owner rejected nested tab bars |
+| Display formats and three identity switches always expanded | Appearance disclosure beside its saved format, below the persistent sample | Keep secondary choices reachable without filling the first view |
+| Warning switch and several thresholds | One Limit colors switch with fixed below-15%-remaining help | Remove extra color modes and decisions |
+
+Owner requested Meng To; no installed design skill named mengto/Meng To was found
+in the available skill roots. The similarly named X-writing skill is unrelated.
+The requested path was asked for; this implementation follows the existing product
+language and mandatory emil-design-eng/animate guidance without claiming Meng To
+skill usage. Visual acceptance of the revised layout remains Review.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Floating and Menu bar use identical checkbox limit controls | Shared layout with radios for Floating and checkboxes for Menu bar | Match selection semantics while retaining consistent identity and spacing |
+
+
+Menu bar and Floating limit groups keep model names on one line, using shared
+content-sized columns so period controls align. Shared Claude/GPT is labeled
+Claude & GPT, matching the home quota label; full provider keys and accessible
+limit names remain intact. Ungrouped providers span the full row. Retain existing
+checkbox/radio focus, pointer, theme and reduced-motion behavior; no new motion.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Fixed 44px model column breaks Claude and GPT models across lines | Single-line Claude & GPT with shared content-sized column | Keep limit groups readable at tray width |
+
+Display offers Menu bar and Floating as separate locations, with independent provider switches.
+Floating provider rows and segments require an active account in the current
+workspace; saved defaults do not establish a login. An omitted Antigravity
+account list means no workspace accounts: hide its Floating card even when a
+local provider login is detected. Keep saved provider selections for later reuse. Turning Show floating usage off
+disables provider switches and dims the preview. Preserve saved provider choices
+while unavailable, and hide the native orb if no selected provider is active.
+Floating uses a single 60-point circle (72-point native frame including padding)
+for every selection count. The existing Orbilap app mark sits in the center; no
+provider logos, Mini, +count, mode picker or popout. Up to three
+equal segments of one SVG progress ring represent selected providers in canonical order:
+Codex first clockwise in white, Claude next in coral
+#d97757, Antigravity last clockwise in solid brand blue #3186FF. Each service receives 1/N of the circumference, with a 7% circumference gap
+between neighboring segments. A single provider keeps the same gap centered at
+twelve o’clock, including at 100%, so its start and end remain visible. Radius 24 and stroke 5 use a shared 60×60 viewBox. #444 rails and clear service
+gaps show the bounds; there are no endpoint dots. Progress uses round caps, per the owner’s final preference. Center the 20-point
+transparent AppGlyph with a static silver highlight gradient and subtle edge
+shadow. Its 46×36 source contains centered 34×34 artwork: scale the complete mask
+proportionally to preserve the circular shape. Paint the 20-point artwork inside a
+24-point mask box with two points of safe inset on each edge, so antialiasing and
+the static shadow are not cut off in the Settings preview or native orb.
+There is no app-icon tile/background, center number, glow animation or rotation.
+The orb is always pure black with white text in normal/hover/pressed/focused
+states, independent of application theme. Tracks use fixed dark gray. Antigravity
+uses solid #3186FF from its bundled logo. When workspace Near limit colors are enabled,
+each current displayed limit turns red (#ff453a) only below 15% remaining,
+regardless of remaining/used display direction. At exactly 15% or above, or
+with the option off, restore provider colors. Legacy saved levels are ignored. Unknown/expired limits never receive warning fill.
+
+A ring shows one independently selected Floating limit per provider, persisted with
+the existing private machine preferences. Until explicitly changed, use the first
+selected Menu bar limit for compatibility. Place the shared UsageLimitChoices single-choice radio rows
+below each selected provider switch, using shared model grouping and label spacing.
+Floating keeps one selected limit per provider: selecting another replaces the previous
+choice, and clicking the current choice retains it. Omit the static limit-selection helper text. Both sections reuse UsageProviderChoice
+for the provider mark, active account identity, switch, row spacing and separators.
+Reuse shared radio pointer, focus, disabled and reduced-motion behavior, with
+Radix single-choice keyboard navigation; no new control motion.
+Options are a main-window-only projection of the existing native monitor cache;
+listen for cache changes instead of requesting new provider probes. Filter stale
+workspace/account options. Preserve unavailable saved choices and show an unfilled
+reading rather than silently choosing another limit. Keep the existing remaining/used
+preference. All selections use the ring fill; the center is reserved for the transparent mark. The accessible description
+retains each provider/account/limit/percentage/direction, including missing values.
+Unknown/expired readings draw muted continuous tracks without fill; when all are unavailable, show a centered dash.
+No progress animation or spinner. The whole circle opens the existing panel;
+mouse-down on the rings retains native drag. Native frame never grows for more
+providers and recovers within monitor bounds as before. Settings preview reuses
+the exact same component, with clearly synthetic values and no account requests.
+
+Apply emil-design-eng and animate's frequency gate: frequent data stays static,
+shared Button geometry/focus and home theme materials remain. No extra interaction
+or dependencies. Keep the existing multi-provider cache, private position and
+read-only secondary IPC boundary; no native expansion or radial state.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Provider logos and separate numbers in a larger circle | Nested colored progress rings at one compact size | Save screen space while retaining each service's reading |
+| Unavailable reading mixed with numeric labels | Dashed unfilled ring and descriptive tooltip | Keep unknown data distinct from actual zero |
+
+Left-clicking the menu-bar icon opens and focuses the existing mounted panel
+directly. Right-clicking opens a native menu containing only Quit. Quit uses
+the existing application exit path. Native
+macOS menu styling, keyboard navigation, dismissal, theme and motion apply.
+The normal tray click opens the panel directly; the optional global
+shortcut still opens the panel directly. No custom menu CSS or animation is added.
+
+Keyboard shortcut is an opt-in machine preference in Settings → General. Reuse
+shared section headings, Switch, secondary Button and the horizontal action-row.
+The combination button records physical keys with Command, Control or Option;
+Escape cancels capture and Tab moves to the paired Cancel / Save shortcut actions.
+Save uses the primary variant, Cancel the neutral secondary variant. Recording
+starts only after the native capture guard is ready. The current registered key
+is also recordable through its native event without hiding the panel. Show
+invalid-input/conflict feedback without replacing the previous saved setting.
+Keep the combination editable while disabled, preserve the choice across toggles
+and launches, and reset to disabled with Command–Shift–O as the suggested key.
+
+The global shortcut opens the existing mounted tray panel immediately. A second
+press hides the focused home panel and restores the application that was active
+before shortcut opening. A visible unfocused panel is focused rather than hidden.
+Dialogs, file imports and busy flows retain their current state; a shortcut does
+not dismiss or discard them. Escape on home uses the same guarded hide path.
+Holding a shortcut triggers once until release. These keyboard actions add no
+animation. Restore native Tab / Shift+Tab navigation throughout home and dialogs;
+this supersedes the earlier global Tab suppression. Existing pointer motion,
+theme tokens, circular icon controls and reduced-motion rules remain in force.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Tray click is the only global panel entry | Optional configurable global shortcut opens the same panel | Reach usage without moving from the keyboard |
+| Tab and Shift+Tab are suppressed globally | Native keyboard traversal and existing Radix focus traps operate | Make the shortcut useful for operating the panel as well as viewing it |
+| No shortcut setting | Shared toggle, recorder and paired Cancel / Save | Expose enablement, conflict recovery and user-selected keys without a new control system |
+
+Update discovery uses one static 6px signal dot on the home Settings control and
+beside the Updates tab label. The dot marks an unseen offered version; its parent
+control's accessible name and tooltip include Update available. Opening Settings
+retains the current tab and the dot. A committed, visible Updates tab acknowledges
+that version and clears both dots, while retaining its version, What's new and
+Download actions. Remember seen versions across app launches. A newer release
+gets a fresh dot; Skip applies only to that release, and manual checks can reveal
+it again. Keep the dot outside label/glyph layout, pointer-inert and static in
+both themes. Preserve circular controls, focus, tab navigation and reduced motion.
+
+Check for updates automatically defaults on for missing preferences and preserves
+explicit opt-outs. Check on app launch and once per day while running, using
+the existing signed updater feed. Background discovery is silent and never
+downloads or installs. Offline checks fail quietly and retain an existing offer.
+Download and Install & relaunch always require their separate explicit actions.
+The existing update-card/release-notes motion is unchanged. The former combined
+Automatic updates check/download behavior is superseded by this check-only flow.
+
+Disconnected home account cards show a one-pixel inset edge in the shared
+`--home-warning` tone in both themes. Retain the neutral card surface and
+Reconnect needed text/icon. The edge replaces the neutral outline without
+changing card size, control states or motion; active green styling applies
+only to connected cards.
+
+Disconnected Codex home cards retain the standard card material and show a
+1px inset warning outline using --home-warning in both themes. This follows
+the active card's inset outline geometry without shifting layout. Keep the
+Reconnect needed copy and icon; connected cards lose the warning outline.
+This static state treatment adds no motion or control overrides.
+
+Omit the Codex account-switch instruction when connected saved accounts have no
+active selection. Keep the existing switch controls and installation/reconnection
+guidance. This copy removal adds no motion or changes to shared controls.
+
+Codex home cards show a read-only banked reset balance in the existing secondary
+identity row, beside the subscription deadline or fallback email. Use the shared
+owner-supplied dashed Refresh icon and a tabular count in the muted metadata style, with a quiet dot
+separator only after existing metadata. Keep the icon and count together on the
+same row. Show positive reported balances only; hide zero, unknown and
+disconnected balances. The shared tooltip and accessible name say how many
+banked resets are available. Usage remains in the existing account editor.
+Align the balance with the metadata baseline and center the supplied dashed SVG
+with the count using the existing inline flex row. Keep the SVG block-level
+without a vertical translation; the earlier upward offset was specific to the
+superseded library glyph and made the count appear too low.
+Reuse theme tokens and tooltip pointer/keyboard/reduced-motion behavior; the
+balance itself adds no animation, control or network request.
+
+Additional limits titles show only the chevron and label, without a limit-count
+badge on any account card. Keep the shared disclosure, expanded content,
+spacing, focus, pointer and reduced-motion behavior; this removal adds no motion.
+
+The shared Additional limits disclosure removes the home metric preview's
+12px top margin inside its expanded body. Keep the existing 8px metric inset,
+so the disclosure title sits closer to its children than to the preceding
+section. Apply this consistently to every home account card in both themes;
+retain the existing disclosure animation, focus, pointer and reduced-motion
+behavior. This spacing correction adds no new motion or control overrides.
+
+On initial Antigravity loading and refresh, keep the shared account skeleton
+until saved accounts finish their plan/usage verification. Re-read the native
+account list after a failed verification and omit confirmed-expired accounts
+before revealing cards, without an expiry error toast or manual refresh.
+Retain cards on transient failures and show their existing usage error state.
+Reuse the first quota reading; add no motion, control or theme overrides.
+
+Antigravity uses the same AccountUsagePreview metrics, typography, spacing,
+progress bars, reset tooltips and loading skeleton as the other home cards.
+Match the provider's shared quota grouping, not its visual skin (owner
+clarification, 25 November 2026). Shared Gemini readings appear first, 5-hour
+then Weekly, labeled Gemini · 5-hour and Gemini · Weekly. Claude & GPT shared
+readings remain in the existing Additional limits disclosure, also five-hour-first.
+Preserve reported names on model-specific fallback readings and never infer
+shared Gemini capacity from them. Use only measured remaining percentages and
+reported reset times. Remove the bespoke circular meters, bordered quota rows
+and reset paragraphs. Reuse existing focus, pointer, keyboard, both-theme and
+reduced-motion behavior; no new motion or CSS overrides. This supersedes the
+older Carbon/Argon featured presentation and the circular-row adaptation.
+Menu-bar saved window keys remain unchanged.
+
+Codex reset notices show upcoming announcements and valid predictions only.
+Remove scheduled notices at their deadline and never show confirmed reset
+history as a replacement banner, including banked credits. Reuse the existing
+notice controls and immediate expiry behavior in both themes; add no motion.
+
+Remaining quota uses whole percentages with a minimum of 1% while the measured
+remaining capacity is positive. Show 0% only at exhaustion (used >= 100%).
+Keep the existing nearest-integer rounding above that minimum. Apply this
+consistently to the account cards, Codex usage dialog and menu-bar labels,
+including accessible meter values. This numeric correction adds no motion or
+changes to shared controls, focus, pointer behavior or theme tokens.
+
+Codex menu-bar defaults select only the reported 5-hour limit for Plus and
+only the reported weekly limit for Pro. Unknown plans and other providers keep
+the existing reported-window defaults. Explicit workspace or account limit
+choices take precedence. Provider logos default on, including with one provider;
+explicitly hiding them remains saved. The app logo also stays on by default,
+with its existing manual opt-out and empty-usage fallback. Reuse the existing
+settings switches and checkbox states; this defaults change adds no motion.
+
 In Settings → Updates, the app name and logo anchor the card. Show the installed
 version below the name until an update is offered. Check updates uses the shared
 secondary button variant so its fill stays visible while it is busy. Its
@@ -22,7 +459,9 @@ Use the shared dialog entrance, exit and circular
 Close control. Keyboard and reduced-motion interactions open immediately.
 Escape closes the notes and restores focus to What's new.
 For local testing, run `VITE_ORBILAP_PREVIEW_UPDATE=1 pnpm run dev:restart`,
-then check for updates in Settings. The synthetic offer simulates checking,
+then open the DEV tray panel. The Settings dot appears automatically for Preview
+9.9.9; open Settings, then Updates to clear it and inspect the offer. Restart
+the preview to repeat the unread state. The synthetic offer simulates checking,
 download progress, installation and relaunch in the real UI. It makes no
 updater requests, writes no updater preferences and never relaunches the app.
 
@@ -207,23 +646,16 @@ feedback. This layout change adds no motion.
 The account editor uses Save for its name-submit action and retains its existing
 save icon, busy label and shared button behavior. This copy change adds no motion.
 
-Menu bar → Appearance uses one settings card. Give the clearly labeled sample
-of the native menu bar enough room to show the whole composition in a full-width
-pill with fully rounded ends. Keep its icon, optional logo,
-initials and usage in one non-wrapping horizontal row, including when logos
-and initials are both off. Do not use a content-sized capsule. Put it above
-the shared Orbilap radio rows for display format, then use three
-matching switch rows for the app logo, provider logos and account initials.
-Show app logo defaults on for existing and new workspaces. Hiding it removes
-both its mark and reserved space in every native style. Keep the app mark as
-the access target when no usage renders and explain that fallback below the
-switch. The sample
-combines format and identity in one place, uses the tray masks and reflects the
-workspace's used/remaining preference. It stays available with example initials
-when no provider is active. Give each format a short description and make the
-whole row clickable. Allow Up/Down to move between radio options. Keep controls
-focused while saving and avoid overlapping hit areas at tray width. Reuse
-existing switch feedback; the sample and radio selection add no motion.
+Menu bar uses a persistent full-width pill sample above the shared Appearance
+disclosure. Keep the sample's native icon masks, optional provider logo, initials
+and usage in one non-wrapping row. Label it Sample usage and reflect the workspace's
+used/remaining preference. Appearance contains the existing radio rows for display
+format and three matching switches for app logo, provider logos and initials.
+Show app logo defaults on. Hiding it removes its reserved space; retain the native
+app-mark fallback when no usage renders and explain that fallback below the switch.
+Keep the sample available with example initials when no provider is active. Retain
+radio descriptions, Up/Down traversal, focus while saving and shared control states.
+The disclosure and sample add no motion.
 
 Banked resets use the shared small Button and 16px action icons. Reserve width
 for its changing label. Use changes to Confirm with a leading
@@ -256,7 +688,7 @@ choices remain aligned. This spacing change adds no motion.
 Full provider window keys remain in accessible names and saved preferences.
 Remove repeated visible account/limit headings and explanatory text. Appearance
 includes Show provider logos: explicit on/off works for one or multiple providers;
-missing legacy preferences retain automatic logos for multiple providers.
+missing preferences default to showing provider logos.
 Use the same normalized alpha masks in Settings and native tray rendering.
 Reuse checkbox/switch feedback; keyboard and reduced motion remain immediate.
 
@@ -273,16 +705,6 @@ and retain dirty-draft confirmation for profile navigation. Focus the active
 heading after navigation, preserving the initial workspace-name input focus.
 Reuse Orbilap's neutral material, Neat Icons and existing dialog/hover presence;
 keyboard actions and reduced motion stay immediate. No new motion is added.
-
-Antigravity's shared Gemini limits use Gemini rather than Gemini Models in card
-labels and reset tooltips. This text correction adds no motion or controls.
-
-Antigravity's featured card labels combine the short model name and limit on one
-line, such as Carbon · Weekly and Argon · Weekly. Omit the Gemini 4 prefix and
-separate model headings. Reuse the shared label, percentage and meter spacing so
-equivalent provider cards have the same height. Retain full model names in the
-accessible usage group, model ordering and Additional limits. This static layout
-change adds no motion; preserve reset-tooltip focus and pointer behavior.
 
 Account enrollment uses compact provider and sign-in cards with distinct browser,
 device, file and folder icons. Keep descriptions to one short line. Empty local
@@ -431,8 +853,8 @@ and explicit download/install actions. Check updates uses Orbilap’s Neat Icons
 Search glyph; busy actions retain the shared ring. Preserve tray-width controls,
 keyboard focus, pointer and reduced-motion behavior with no new motion.
 
-Updates omits the daily-check explanatory footer below Automatic updates.
-Keep the existing controls, keyboard focus, pointer and reduced-motion behavior.
+Updates explains that automatic checks do not download or install, below the
+Check for updates automatically switch. Preserve shared control behavior.
 
 Updates uses the home card action material, foreground and hover feedback for
 the labeled Check updates action, with pill corners and a search icon
@@ -523,11 +945,17 @@ height with 12px top/bottom insets. Do not stretch the body to fill empty space.
 Keep overflow available for short windows and long content; no height animation.
 Settings uses 12px bottom padding to keep the content close to the sheet edge.
 
-Banked Reset uses the shared layers icon across sorting, credit confirmation
-and banked-credit announcements. Refresh actions and ordinary scheduled reset
-markers keep their action-specific icons. Preserve existing sizes and behavior.
+Banked Reset uses the owner's exact refresh.svg across account balances,
+sorting, credit confirmation and banked-credit announcements (owner correction,
+28 November 2026). BankedResetsIcon preserves its original paths, 24px viewBox,
+1.5 stroke, rounded caps/joins and 3 3 dashed arc. Only the fixed near-white
+color becomes currentColor for both themes, with sizes supplied by each caller.
+This explicit owner-selected asset supersedes the Neat Refresh substitution.
+Refresh actions and ordinary scheduled reset markers keep their existing icons.
+Preserve existing sizes, currentColor themes, accessible names and behavior;
+this glyph replacement adds no motion.
 
-Sort uses a checked circle for Active first, layers for Banked resets and a pie
+Sort uses a checked circle for Active first, Refresh for Banked resets and a pie
 chart for Remaining capacity. Keep calendar, clock and type for expiry, availability
 and name. Match the selected icon in the trigger; its chevron is 10px, including
 the SVG inside the wrapper, with the existing hit target.
@@ -919,7 +1347,7 @@ over 220ms with ease in both directions; quick reversals continue from the curre
 opacity. Reduced motion shortens this fade to 100ms. Quiet inset fills define the cards; a tinted selection
 layer fades in over 180ms. Checkbox edges are soft inset strokes, with persistent
 check/fill layers that reverse over 160ms. Visible-limit labels have no extra
-outline. Usage uses two illustrated radio cards for Remaining / Used, showing complementary example values with explicit example copy. Codex resets has a master switch and a dependent predictions checkbox; hiding updates preserves its checked preference. Keyboard selection and focus
+outline. Usage uses two illustrated radio cards for Remaining / Used, showing complementary example values with explicit example copy. Codex resets has one master switch; predictions are included automatically. Keyboard selection and focus
 are immediate; reduced motion keeps only short opacity fades.
 
 Shared select menus use a 4px inset and concentric 7px item corners inside the
@@ -943,9 +1371,9 @@ motion keeps only a 100ms opacity fade. Account initials uses an illustrated
 checkbox card that follows the selected percentage/bar style. Visible limits
 stay in duration order regardless of selection. Switches all use the shared
 Radix Switch, without an inset outline; switch groups use 16px horizontal and 4px vertical
-padding and no outer border. The Limit colors group keeps 16px below its final helper text. Limit colors has no repeated visible heading. Its dependent levels sit inside
-the master switch group, indented behind a quiet vertical guide, with no row
-hover layer. Content panels never draw keyboard focus borders; direct controls
+padding and no outer border. Limit colors uses one shared Switch row with
+“Turn red below 15% remaining.” as its accessible description. No disclosure,
+threshold controls, colored dots or dependent modes remain. Content panels never draw keyboard focus borders; direct controls
 keep an inset focus edge that stays inside scroll containers. The home Add
 Account button has a flat fill without a top-edge inset highlight.
 Preserve shared focus, pointer and reduced-motion behavior.
@@ -981,3 +1409,14 @@ The sections below include historical design decisions.
 Orbilap is a macOS tray utility. Apply the Appllama principles to the existing
 Tauri/React panel: desktop typography, grouped preferences, keyboard focus and
 short sheets. Mobile navigation, safe areas and simulator APIs do not apply.
+
+Floating test mode rebuilds its synthetic quota projection on every native paint.
+Main get_state/settings reloads must never replace the preview with empty real
+account samples. The override is debug-only and does not write synthetic settings.
+
+Floating arcs use real SVG arc paths with explicit rounded linecaps on both rail
+and colored progress, rather than dashed circles. Full circles use two arc commands
+to preserve geometry. The single parent Button's accessible description retains
+provider/account/limit/percentage/direction for assistive use, without nested focus
+targets. Floating has no hover tooltip, center title or transparent tooltip hit
+paths, per the owner's latest choice. No native resizing or extra IPC is added.

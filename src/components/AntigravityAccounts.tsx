@@ -20,7 +20,8 @@ import { LoadingRing } from "./ui/loading-ring";
 import { ModalTarget } from "./AppModal";
 import { AccountSettings } from "./AccountSettings";
 import { LoadingSkeleton } from "./LoadingSkeleton";
-import { AccountUsagePreview, AdditionalLimits, accountPreviewWindows } from "./AccountUsagePreview";
+import { AdditionalLimits } from "./AccountUsagePreview";
+import { AntigravityQuotaGroup, AntigravityQuotaGroups } from "./AntigravityQuotaGroup";
 import { LiveAccountUsage, type UsageSnapshot } from "./LiveAccountUsage";
 
 const defaultAccountName = "Antigravity account";
@@ -32,49 +33,19 @@ function cardName(account: SetupAccount) {
   return googleName && !googleName.includes("@") ? googleName : defaultAccountName;
 }
 
-const featuredModels = ["Gemini 4 Carbon", "Gemini 4 Argon"] as const;
-const modelOrder = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
-
-function featuredModel(label: string) {
-  const model = label.split(" · ")[0].replace(/\s*\([^()]+\)$/, "").trim();
-  return featuredModels.find(name => name.toLowerCase() === model.toLowerCase());
-}
-
 function AntigravityUsage({ quota, accountName }: { quota: UsageSnapshot; accountName: string }) {
   const windows = (quota.windows ?? []).filter(window => Number.isFinite(window.percent) && window.percent >= 0);
-  const models = quota.models ?? [];
-  const featured = featuredModels.flatMap(name => {
-    const limits = windows.flatMap(window => {
-      if (featuredModel(window.window) !== name) return [];
-      return [{ ...window, window: window.window.split(" · ").slice(1).join(" · ") || "Reported quota" }];
-    });
-    const unique = new Map<string, typeof limits[number]>();
-    for (const limit of limits) {
-      const previous = unique.get(limit.window);
-      if (!previous || previous.percent < limit.percent) unique.set(limit.window, limit);
-    }
-    const measured = [...unique.values()];
-    const primary = accountPreviewWindows({ ...quota, windows: measured });
-    const ordered = [...primary, ...measured.filter(limit => !primary.includes(limit))];
-    return ordered.length || models.some(model => featuredModel(model) === name) ? [{ name, limits: ordered }] : [];
-  });
-  const extra = windows.filter(window => !featuredModel(window.window)).map(window =>
-    /^(?:5-hour|Weekly)$/i.test(window.window) ? { ...window, window: `Gemini · ${window.window}` }
-      : { ...window, window: window.window.replace(/^Gemini Models · /i, "Gemini · ") });
-
+  // Only a reported shared Gemini group is primary; never invent a shared quota
+  // from individual model limits returned by the fallback catalog.
+  const shared = windows.filter(window => /^(?:Gemini(?: Models)? · )?(?:5-hour|Weekly)$/i.test(window.window));
+  const extra = windows.filter(window => !shared.includes(window));
   return <>
     {quota.error ? <ErrorToast message={quota.error} /> : null}
-    {featured.length ? <div className="account-usage-metrics antigravity-featured" role="group" aria-label="Featured Gemini models">
-      {featured.map(({ name, limits }) => <div className="antigravity-featured-model" key={name}>
-        {limits.length ? <AccountUsagePreview windows={limits} accountName={`${accountName} · ${name}`} labelPrefix={name.replace(/^Gemini 4 /, "")} />
-          : <p className="account-data-note">{name.replace(/^Gemini 4 /, "")} · Usage unavailable</p>}
-      </div>)}
-    </div> : null}
-    {extra.length ? featured.length
-      ? <AdditionalLimits windows={extra} accountName={accountName} showRemaining label="Additional limits" />
-      : <AccountUsagePreview windows={extra} accountName={accountName} showRemaining />
-      : null}
-    {!featured.length && !extra.length && !quota.error ? <p className="account-data-note">Usage unavailable</p> : null}
+    {shared.length ? <AntigravityQuotaGroup windows={shared} name="Gemini Models" accountName={accountName} /> : null}
+    {extra.length ? <AdditionalLimits windows={extra} accountName={accountName} showRemaining>
+      <AntigravityQuotaGroups windows={extra} accountName={accountName} />
+    </AdditionalLimits> : null}
+    {!shared.length && !quota.error ? <p className="account-data-note">Gemini usage unavailable</p> : null}
   </>;
 }
 
@@ -103,6 +74,7 @@ export function AntigravityAccounts({ workspace, refreshKey, onChanged }: { work
   const quotaKey = JSON.stringify([workspace.id, refreshKey, workspace.antigravityAccountIds]);
   const now = useAccountClock();
   const [accounts, setAccounts] = useState<SetupAccount[]>([]);
+  const [initialUsage, setInitialUsage] = useState<Record<string, UsageSnapshot>>({});
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -111,11 +83,27 @@ export function AntigravityAccounts({ workspace, refreshKey, onChanged }: { work
   useEffect(() => {
     let active = true;
     setLoading(true); setError(null); setSwitchError(null);
-    void antigravityAccounts().then(accounts => { if (active) setAccounts(accounts); })
+    void antigravityAccounts().then(async accounts => {
+      if (!active) return;
+      const visible = accounts.filter(account => workspace.antigravityAccountIds?.includes(account.id));
+      const readings = await Promise.allSettled(visible.map(account => antigravityAccountQuota(account.id, true)));
+      if (!active) return;
+      // Verification can retire a saved paid plan. Re-read native membership before
+      // revealing cards; never infer expiry from a network/authentication error.
+      const confirmed = readings.some(reading => reading.status === "rejected")
+        ? await antigravityAccounts().catch(() => accounts) : accounts;
+      if (!active) return;
+      setInitialUsage(Object.fromEntries(visible.map((account, index) => {
+        const reading = readings[index];
+        return [account.id, reading.status === "fulfilled" ? reading.value
+          : { provider: "antigravity", error: prettyError(reading.reason) }];
+      })));
+      setAccounts(confirmed);
+    })
       .catch(e => { if (active) setError(prettyError(e)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [workspace.id, refreshKey, retry]);
+  }, [quotaKey, retry]);
   const activeId = activeProviderAccountId("antigravity", workspace, accounts);
   const visible = accounts
     .filter(account => workspace.antigravityAccountIds?.includes(account.id))
@@ -131,18 +119,8 @@ export function AntigravityAccounts({ workspace, refreshKey, onChanged }: { work
         {visible.length > 1 ? <AccountSwitchButton name={a.name} active={a.id === activeId} pending={switchingId === a.id} disabled={!!switchingId} onActivate={() => void switchAccount(a)} /> : null}
       </div></div>
       <LiveAccountUsage identity={`antigravity:${workspace.id}:${a.id}`} accountName={a.name} refreshKey={refreshKey} load={async () => {
-        const quota = await antigravityAccountQuota(a.id, true);
-        const windows = quota.windows?.flatMap(window => {
-          if (!/^Gemini(?:$|[ .·-])/i.test(window.window) || /\b(?:Claude|GPT)\b/i.test(window.window)) return [];
-          // Shared Gemini windows use the same columns and labels as the other cards.
-          return [{ ...window, window: window.window.replace(/^Gemini(?: Models)? · (?=5-hour$|Weekly$)/i, "") }];
-        });
-        const models = [...new Set(quota.models?.flatMap(label => {
-          const name = label.trim().replace(/\s*\((?:low|medium|high|xhigh|extra high|extra)\)$/i, "");
-          return /^Gemini \d/i.test(name) && !/\b(?:Claude|GPT)\b/i.test(name) ? [name] : [];
-        }))].sort((a, b) => modelOrder.compare(b, a));
-        return { ...quota, windows, models };
-      }} featuredPlaceholder renderUsage={quota => <AntigravityUsage quota={quota} accountName={a.name} />} onLoaded={sets => { if (sets[0]) setLoadedQuotas(previous => ({ key: quotaKey, quotas: { ...(previous.key === quotaKey ? previous.quotas : {}), [a.id]: sets[0] } })); }} />
+        return initialUsage[a.id] ?? await antigravityAccountQuota(a.id, true);
+      }} renderUsage={quota => <AntigravityUsage quota={quota} accountName={a.name} />} onLoaded={sets => { if (sets[0]) setLoadedQuotas(previous => ({ key: quotaKey, quotas: { ...(previous.key === quotaKey ? previous.quotas : {}), [a.id]: sets[0] } })); }} />
     </article>)}</AnimatedAccountList>}
     <ModalTarget target={settingsAccount}>{(account, presence) => <AccountSettings {...presence} key={`${workspace.id}:${account.id}`} workspace={workspace} provider="antigravity" profile={account} onClose={() => setSettingsId(null)} onChanged={onChanged} onRename={async (name) => {
       await renameAntigravityAccount(account.id, name);

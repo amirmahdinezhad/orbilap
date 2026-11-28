@@ -17,7 +17,7 @@ import { AddIcon, CopyIcon, RefreshIcon, SettingIcon } from "../icons";
 import type { ToastKind } from "./Toast";
 import { PROVIDER_NAMES } from "../providerSetup";
 import { DEFAULT_APP_SETTINGS, type UsageAppearance } from "../types";
-import { usageColor, usagePace } from "../usage";
+import { remainingPercent, usageColor, usagePace } from "../usage";
 import { PlanBadge } from "./PlanBadge";
 import { accountSubscription, isSubscriptionExpired, type Subscription } from "../subscriptions";
 import type { ClaudeProfile } from "../types";
@@ -397,7 +397,7 @@ export function QuotaContent({
                   const capacity = remaining
                     ? Math.min(100, Math.max(0, 100 - w.percent))
                     : w.percent;
-                  const shown = set.provider === "codex" ? Math.round(capacity) : capacity;
+                  const shown = set.provider === "codex" ? (remaining ? remainingPercent(w.percent) : Math.round(capacity)) : capacity;
                   const text = shown % 1 === 0 ? shown.toFixed(0) : shown.toFixed(1);
                   const label = WINDOW_LABELS[w.window] ?? w.window;
                   const tone = quotaTone(w.percent);

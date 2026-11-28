@@ -85,13 +85,32 @@ describe("upcoming Codex resets", () => {
     await act(async () => vi.advanceTimersByTime(59_000));
     expect(view.container).toBeEmptyDOMElement();
   });
-  it("shows a fresh confirmed reset and gives the next announcement priority", async () => {
+  it("hides confirmed reset history while keeping the next announcement visible", async () => {
     localStorage.setItem("orbilap.codexResetHistory", JSON.stringify({ latestReset: completed, dismissedResetId: null }));
     const view = await mount(outlook({ latestReset: completed }));
-    expect(screen.getByText("Reset confirmed")).toBeInTheDocument();
+    expect(view.container).toBeEmptyDOMElement();
     await refresh(view, { ...scheduled(), latestReset: completed });
     expect(screen.getByText("Resets in 3h 00m")).toBeInTheDocument();
     expect(screen.queryByText("Reset completed")).not.toBeInTheDocument();
+  });
+  it.each(["regular", "banked"] as const)("does not bring back a passed %s reset after confirmation, refresh or remount", async (resetType) => {
+    const view = await mount(scheduled({ resetType, scheduledFor: "2026-10-13T04:01:00Z" }));
+    expect(screen.getByLabelText("Codex reset outlook")).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(view.container).toBeEmptyDOMElement();
+    const confirmed = outlook({ generatedAt: new Date().toISOString(), latestReset: {
+      ...completed, resetType, announcedAt: new Date().toISOString(),
+    } });
+    await refresh(view, confirmed);
+    expect(view.container).toBeEmptyDOMElement();
+    view.unmount();
+    expect((await mount(confirmed)).container).toBeEmptyDOMElement();
+  });
+  it("does not replace confirmation with its earlier prediction, but allows a new prediction", async () => {
+    const view = await mount({ ...probable(), latestReset: completed });
+    expect(view.container).toBeEmptyDOMElement();
+    await refresh(view, { ...probable({ observedAt: "2026-10-13T03:59:00Z" }), latestReset: completed });
+    expect(screen.getByText("Possible reset")).toBeInTheDocument();
   });
   it("keeps the next announcement when the completed event belongs to an earlier reset", async () => {
     await mount({ ...scheduled({ announcedAt: "2026-10-13T03:30:00Z" }), latestReset: completed });
@@ -150,7 +169,7 @@ describe("upcoming Codex resets", () => {
     mocks.read.mockResolvedValue(outlook({ latestReset: completed }));
     await act(async () => window.dispatchEvent(new Event("focus")));
     await act(async () => finish(scheduled()));
-    expect(view.container).toHaveTextContent("Reset confirmed");
+    expect(view.container).toBeEmptyDOMElement();
     expect(screen.queryByText("Resets in 3h 00m")).not.toBeInTheDocument();
   });
   it.each(["invalid JSON", JSON.stringify({ bad: true })])("recovers from corrupt dismissal storage: %s", async (value) => {
@@ -184,12 +203,12 @@ function probable(over: Partial<NonNullable<CodexResetStatus["activeWatch"]>> = 
 }
 
 describe("probable reset controls and polling", () => {
-  it("turns estimates off immediately while keeping announced resets visible", async () => {
+  it("ignores the legacy prediction toggle and keeps announced resets preferred", async () => {
     const view = await mount(probable());
     expect(screen.getByText("Possible reset")).toBeInTheDocument();
     const settings = { ...DEFAULT_CODEX_RESET_SETTINGS, showProbableResets: false };
     await act(async () => view.rerender(<CodexResetNotice refreshKey={account} settings={settings} />));
-    expect(view.container).toBeEmptyDOMElement();
+    expect(screen.getByText("Possible reset")).toBeInTheDocument();
     mocks.read.mockResolvedValue({ ...scheduled(), activeWatch: probable().activeWatch });
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(screen.getByText("Resets in 3h 00m")).toBeInTheDocument();
@@ -312,9 +331,9 @@ describe("possible reset timing", () => {
   });
 });
 
-it("dismisses a confirmed reset and ignores old or future completion timestamps", async () => {
+it("never renders confirmed reset history, including old or future timestamps", async () => {
   let view = await mount(outlook({latestReset: completed}));
-  fireEvent.click(screen.getByRole("button", {name:"Dismiss confirmed reset"}));
+  expect(view.container).toBeEmptyDOMElement();
   await refresh(view, outlook({latestReset: completed}));
   expect(view.container).toBeEmptyDOMElement();
   view.unmount();

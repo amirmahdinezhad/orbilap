@@ -7,8 +7,8 @@ import { AccountUsageSkeleton } from "./LoadingSkeleton";
 export type UsageSnapshot = QuotaSet & { models?: string[] };
 
 /** Account-scoped reads discard results after a workspace/account/refresh change. */
-export function LiveAccountUsage({ identity, accountName, refreshKey, load, onLoaded, renderUsage, featuredPlaceholder, showRemaining = true }: {
-  identity: string; accountName: string; refreshKey?: number; load: () => Promise<UsageSnapshot | UsageSnapshot[]>; showRemaining?: boolean; featuredPlaceholder?: boolean; renderUsage?: (quota: UsageSnapshot) => ReactNode; onLoaded?: (sets: QuotaSet[]) => void;
+export function LiveAccountUsage({ identity, accountName, refreshKey, load, onLoaded, renderUsage, showRemaining = true }: {
+  identity: string; accountName: string; refreshKey?: number; load: () => Promise<UsageSnapshot | UsageSnapshot[]>; showRemaining?: boolean; renderUsage?: (quota: UsageSnapshot) => ReactNode; onLoaded?: (sets: QuotaSet[]) => void;
 }) {
   const loader = useRef(load);
   loader.current = load;
@@ -29,5 +29,5 @@ export function LiveAccountUsage({ identity, accountName, refreshKey, load, onLo
     {snapshot.sets.length > 1 ? <p className="account-data-note">{PROVIDER_NAMES[quota.provider] ?? quota.provider}</p> : null}
     {renderUsage ? renderUsage(quota) : <AccountQuotaPreview quota={quota} accountName={snapshot.sets.length > 1 ? `${accountName} · ${PROVIDER_NAMES[quota.provider] ?? quota.provider}` : accountName} showRemaining={showRemaining} />}
   </div>)}</> : <p className="account-data-note">Usage unavailable</p>
-    : <div role="status" aria-label={`Loading usage for ${accountName}`}><AccountUsageSkeleton featured={featuredPlaceholder} /></div>;
+    : <div role="status" aria-label={`Loading usage for ${accountName}`}><AccountUsageSkeleton /></div>;
 }

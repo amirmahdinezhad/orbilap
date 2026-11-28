@@ -14,11 +14,19 @@ beforeEach(() => {
 });
 
 describe("displayPrefs", () => {
-  it("migrates missing or invalid time preferences and persists explicit choices", () => {
+  it("enables check-only discovery by default and preserves explicit opt-outs", () => {
+    expect(loadDisplayPrefs().checkUpdatesOnLaunch).toBe(true);
+    saveDisplayPrefs({ ...DEFAULT_DISPLAY_PREFS, checkUpdatesOnLaunch: false });
+    expect(loadDisplayPrefs().checkUpdatesOnLaunch).toBe(false);
+  });
+  it("migrates retired deadline and clock modes to remaining and 24-hour time", () => {
     localStorage.setItem(DISPLAY_PREFS_KEY, JSON.stringify({ theme: "light", deadlineDisplay: "invalid", timeFormat: "invalid" }));
     expect(loadDisplayPrefs()).toMatchObject({ theme: "light", deadlineDisplay: "remaining", timeFormat: "24h" });
     saveDisplayPrefs({ ...DEFAULT_DISPLAY_PREFS, deadlineDisplay: "date", timeFormat: "12h" });
-    expect(loadDisplayPrefs()).toMatchObject({ deadlineDisplay: "date", timeFormat: "12h" });
+    expect(loadDisplayPrefs()).toMatchObject({ deadlineDisplay: "remaining", timeFormat: "24h" });
+    expect(JSON.parse(localStorage.getItem(DISPLAY_PREFS_KEY)!)).toMatchObject({ deadlineDisplay: "remaining", timeFormat: "24h" });
+    localStorage.setItem(DISPLAY_PREFS_KEY, JSON.stringify({ deadlineDisplay: "date", timeFormat: "12h" }));
+    expect(loadDisplayPrefs()).toMatchObject({ deadlineDisplay: "remaining", timeFormat: "24h" });
     expect(resetDisplayPrefs()).toMatchObject({ deadlineDisplay: "remaining", timeFormat: "24h" });
   });
   it("returns defaults when nothing is stored", () => {

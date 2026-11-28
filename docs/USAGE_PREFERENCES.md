@@ -40,14 +40,12 @@ An accent edit repaints the cached sample immediately. It overrides account
 colors for menu-bar presentation only; saved account colors are not rewritten.
 Unavailable values keep their muted treatment, and time markers stay neutral.
 
-`usage.warningColors` independently enables consumed-capacity colors for the
-whole menu bar, using the most consumed selected valid limit. Enabling it
-reveals per-level switches, colored dots and a compact custom-percent input.
-`usage.warningThresholds` stores enabled levels per workspace; null/missing uses
-75/90/95%, and an empty list disables all levels. Custom integer levels 1–100
-are supported; saving normalizes invalid/duplicate levels. The highest crossed
-enabled level determines the hue (under 75 green, 75 yellow, 90 orange, 95 red).
-Toggling the master preserves the saved levels.
+`usage.warningColors` is the single Limit colors switch. When enabled, only
+less than 15% remaining (strictly more than 85% consumed) turns the menu bar red,
+using the most consumed selected valid limit. At exactly 15% remaining or above,
+keep the normal color. No intermediate colors or configurable levels remain.
+Legacy `usage.warningThresholds` values are retained for compatibility but ignored,
+including an empty list. Turning the switch off restores normal colors.
 Initials, values, window labels, tracks/fills and the tray mark share the hue.
 Usage threshold notifications, session-reset alerts and their persisted history
 have been removed. Old notification settings are ignored and omitted on save.
@@ -119,10 +117,13 @@ activation safeguards. Anthropic profile selection uses its CLI launch command.
 ## Manual login import
 
 Global settings → Updates restores manual checks, release notes, skipping,
-progress and install/relaunch. Automatic updates opt into daily checks and
-signed downloads, including while Settings is closed. Downloaded updates wait
-for explicit installation; failed checks wait until the next daily opportunity
-unless retried manually. `orbilap.lastUpdateCheck` records successful checks.
+progress and install/relaunch. Automatic checks default on for missing preferences
+and preserve saved opt-outs. They run on launch and daily with Settings closed,
+without downloading or installing. Unseen versions mark Settings and the Updates
+tab; opening Updates acknowledges that version persistently. Download and install
+remain separate explicit actions. Failed background checks stay quiet and retry
+at the next daily opportunity or app launch, or manually when requested.
+`orbilap.lastUpdateCheck` records successful checks.
 Global reset changes app/display defaults without replacing workspaces or their
 account membership, menu-bar settings or alert policies.
 
@@ -202,3 +203,64 @@ on warning colors and on the unfilled track. It appears in single and stacked
 progress layouts; numeric rendering stays unchanged. Missing/expired/malformed
 resets, resets farther away than their known period, and unknown durations
 (including monthly) do not fabricate a marker, matching the Usage popup.
+
+## Global panel shortcut
+
+Settings → General → Keyboard shortcut controls a machine-wide, opt-in global
+shortcut. It defaults off with Command–Shift–O suggested. Click the combination,
+hold Command, Control or Option and press a supported key, then choose Save
+shortcut. Cancel or Escape retains the previous choice. The switch enables or
+releases the native registration immediately while preserving the saved key.
+Preferences persist in `panelShortcut: { enabled, accelerator }` in the existing
+private settings file. Changing the combination while disabled does not enable it.
+Reset to defaults disables the shortcut and restores the suggested combination.
+
+The shortcut opens the mounted tray panel, retaining the current workspace and
+screen. On focused home it hides the panel and restores the previous foreground
+application; home Escape uses the same path. Dialogs and busy flows stay intact.
+Tab / Shift+Tab use normal focus traversal and the existing dialog focus traps.
+Capture uses physical key codes so switching typing layouts does not change the
+saved key location. Escape and Tab are reserved for cancellation/navigation.
+
+Native registration happens before saving a new enabled combination. An
+unavailable key keeps the previous registration and saved settings. A failed
+settings write rolls back the registration. At launch, an unavailable saved
+shortcut leaves the app usable and reports its error in General. Other global
+settings updates preserve the shortcut. Shortcut IPC is restricted to the main
+window; the plugin's arbitrary frontend registration commands are not enabled.
+
+## Floating usage
+
+Settings → Display → Floating selects services independently. Their individually selected
+Floating limits are segments of one progress ring in one 60-point circle: Codex is white, Claude coral, Antigravity uses its solid brand blue #3186FF. Neighboring segments have a 7% circumference gap with round caps.
+Order is stable clockwise from the top. Background stays pure black in both
+themes and every interaction state. Native frame is 72 points including transparent padding for
+all selection counts. The center shows only the transparent Orbilap glyph; percentages/account/limit
+names remain in the accessibility description. The transparent Menu bar glyph remains centered without an app-icon tile. No provider logos, extra counts, modes or popouts.
+Rails and gaps expose each segment’s full extent; endpoint dots are removed.
+Progress ends are rounded. The center glyph uses static silver shading, no tile
+background and proportionally scaled circular artwork.
+Unknown/expired readings use muted unfilled tracks with a centered dash when all are unavailable. The existing remaining/used
+preference determines each arc. Click to open the panel; drag the ring area.
+The native monitor/cache, private positions and settings guards are unchanged.
+
+Floating has no hover tooltips on sectors or the center. The main button keeps
+its full accessible summary. Center glyph is 20pt; rails and progress retain
+explicit rounded SVG arc ends.
+
+Floating follows the active workspace Limit colors toggle and the same fixed
+red rule: less than 15% remaining, regardless of remaining/used display direction.
+At 15% or above, or with the toggle off, it keeps its provider color.
+Unknown/expired data never produces warning fill. No additional polling or IPC.
+
+Floating provider rows and ring sectors require an active account in the current
+workspace. Saved defaults are not a login. Turning Show floating usage off disables
+the provider controls and dims the preview. Unavailable providers are hidden while
+their saved choices are retained. With no eligible selected provider, hide the orb.
+
+Choose one Floating limit beneath each selected provider (Antigravity groups model
+periods like Menu bar). The choice is independent of Menu bar and stays in private
+machine preferences per provider. Existing settings keep the first Menu bar limit
+until changed. Options come from the current monitor cache through main-only IPC;
+no second quota poll or credential probe. Unavailable saved limits stay selected
+and render an unfilled reading. Provider/toggle disabled and eligibility rules apply.

@@ -7,7 +7,7 @@ import { activeProviderAccountId } from "../accountActivity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { codexProfileQuota, prettyError, type QuotaSet } from "../api";
 import { codexAccountPreferences } from "../accountPrefs";
-import { KeyIcon, RefreshIcon } from "../icons";
+import { BankedResetsIcon, KeyIcon, RefreshIcon } from "../icons";
 import { ProviderLogo } from "../logos";
 import { isSubscriptionExpired } from "../subscriptions";
 import type { AppSettings, CodexProfile, CodexProfilesState, Workspace } from "../types";
@@ -19,6 +19,7 @@ import { AccountQuotaPreview } from "./AccountUsagePreview";
 import { AccountSwitchButton } from "./AccountSwitchButton";
 import { AccountIdentity } from "./AccountIdentity";
 import { LoadingSkeleton } from "./LoadingSkeleton";
+import { Tooltip } from "./ui/tooltip";
 
 const EMPTY_QUOTAS: Record<string, QuotaSet | null> = {};
 
@@ -89,10 +90,8 @@ export function WorkspaceAccounts({ workspace, profiles, app, quotas, busy, chec
   return <section className="workspace-accounts" aria-label="Workspace accounts">
     <ErrorToast message={profiles?.switchError} />
     {profiles ? <h2 className="provider-group-title"><ProviderLogo provider="codex" />Codex <span className="provider-count" aria-label={`${visible.length} Codex ${visible.length === 1 ? "account" : "accounts"}`}>{visible.length}</span></h2> : null}
-    {profiles && (workspace.usage.showCodexResets ?? true) ? <CodexResetNotice refreshKey={quotas} settings={{ ...app.codexReset, showProbableResets: workspace.usage.showProbableResets }} /> : null}
-    {!loading && visible.length > 0 && !activeId ? <p className="provider-activation-note">{missingCodex ? "Install Codex CLI or Codex app and sign in, then refresh." : (visible.some((profile) => profile.connected)
-      ? "Choose an account’s switch button to activate it in Codex."
-      : "Reconnect a Codex account before switching.")}</p> : null}
+    {profiles && (workspace.usage.showCodexResets ?? true) ? <CodexResetNotice refreshKey={quotas} settings={app.codexReset} /> : null}
+    {!loading && visible.length > 0 && !activeId && (missingCodex || !visible.some((profile) => profile.connected)) ? <p className="provider-activation-note">{missingCodex ? "Install Codex CLI or Codex app and sign in, then refresh." : "Reconnect a Codex account before switching."}</p> : null}
     {loading ? <LoadingSkeleton count={profiles ? visible.length : workspace.accountIds.length} initial={false} /> : <AnimatedAccountList className="workspace-account-list">{sortAccounts(visible, sorting.preference, activeId, quotas, now, knownWindows).map((profile) => {
       const isActive = profile.id === activeId;
       const switchPending = profile.id === checkingId || profile.id === switchingId;
@@ -101,7 +100,12 @@ export function WorkspaceAccounts({ workspace, profiles, app, quotas, busy, chec
       const resetCount = quota?.resetCredits?.availableCount ?? 0;
       const hasBankedResets = !needsReconnect && resetCount > 0;
       return <article key={profile.id} data-account-provider="codex" data-account-id={profile.id} tabIndex={-1} ref={(node) => { if (node) cards.current.set(profile.id, node); else cards.current.delete(profile.id); }} className={`workspace-account account-card${isActive && !needsReconnect ? " is-active" : ""}${needsReconnect ? " is-disconnected" : ""}`} data-connection-state={needsReconnect ? "disconnected" : "connected"} aria-label={`${profile.name} account`}>
-        <div className="workspace-account-row"><AccountIdentity active={isActive && !needsReconnect} name={profile.name} email={profile.email} subscriptions={[profile.subscription ?? { id: "chatgpt", service: "ChatGPT", plan: profile.plan }]}>
+        <div className="workspace-account-row"><AccountIdentity active={isActive && !needsReconnect} name={profile.name} email={profile.email} subscriptions={[profile.subscription ?? { id: "chatgpt", service: "ChatGPT", plan: profile.plan }]}
+          secondaryMeta={hasBankedResets ? <Tooltip content={`${resetCount} banked ${resetCount === 1 ? "reset" : "resets"} available`}>
+            <span className="account-reset-balance" role="img" aria-label={`${resetCount} banked ${resetCount === 1 ? "reset" : "resets"} available`}>
+              <BankedResetsIcon size={13} /><span aria-hidden="true">{resetCount}</span>
+            </span>
+          </Tooltip> : null}>
           <PlanBadge subscription={profile.subscription ?? { id: "chatgpt", service: "ChatGPT", plan: profile.plan }} />
         </AccountIdentity><div className="workspace-account-actions">
           <AccountMoreButton name={profile.name} onOpen={() => onManage(profile.id, hasBankedResets)} />

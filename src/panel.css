@@ -513,7 +513,6 @@ main.providers:has(> .workspace-setup) { overflow: hidden; padding-bottom: 0; }
 /* A reset belongs to the provider, with less weight than an account card. */
 
 /* Color levels belong to the menu-bar master, separate from notifications. */
-.workspace-limit-colors { margin-top: 10px; }
 .workspace-color-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; margin-right: 10px; }
 .workspace-color-dot.is-early { background: #30b86b; }
 .workspace-color-dot.is-warning { background: var(--warning-threshold); }

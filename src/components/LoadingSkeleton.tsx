@@ -1,17 +1,11 @@
 import { buttonVariants } from "./ui/button";
 import { Skeleton, SkeletonText } from "./ui/skeleton";
 
-export function AccountUsageSkeleton({ featured = false }: { featured?: boolean }) {
+export function AccountUsageSkeleton() {
   const metric = (key: number) => <div className="account-usage-metric" key={key}>
-    <span className="usage-preview-label"><SkeletonText width={featured ? "12ch" : key === 0 ? "6ch" : "7ch"} /></span>
+    <span className="usage-preview-label"><SkeletonText width={key === 0 ? "6ch" : "7ch"} /></span>
     <strong><SkeletonText width="3ch" /><span className="usage-preview-unit"><SkeletonText width="4ch" /></span></strong>
     <span className="usage-preview-plot"><Skeleton className="usage-preview-track" /></span>
-  </div>;
-
-  if (featured) return <div className="account-usage-metrics antigravity-featured" aria-hidden="true">
-    {[0, 1].map(column => <div className="antigravity-featured-model" key={column}>
-      <div className="account-usage-preview"><div className="account-usage-metrics">{metric(column)}</div></div>
-    </div>)}
   </div>;
 
   return <div className="account-usage-preview" aria-hidden="true">
@@ -45,7 +39,7 @@ export function LoadingSkeleton({ count = 1, provider = "codex", initial = true 
           {count > 1 ? <Skeleton className={action} /> : null}
         </div>
       </div>
-      <AccountUsageSkeleton featured={provider === "antigravity"} />
+      <AccountUsageSkeleton />
     </div>)}
   </div>;
 }

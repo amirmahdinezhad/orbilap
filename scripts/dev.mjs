@@ -23,7 +23,7 @@ function startIndependent(worker = "--worker") {
   // launchd retains the label after a worker exits.
   spawnSync("/bin/launchctl", ["remove", label], { stdio: "ignore" });
   const environment = { PATH: process.env.PATH };
-  for (const key of ["CODEX_HOME", "ORBILAP_OPENCODE_USERDATA", "ORBILAP_PREVIEW_CLAUDE", "VITE_ORBILAP_PREVIEW_UPDATE"]) {
+  for (const key of ["CODEX_HOME", "ORBILAP_OPENCODE_USERDATA", "ORBILAP_PREVIEW_CLAUDE", "ORBILAP_PREVIEW_FLOATING", "VITE_ORBILAP_PREVIEW_UPDATE"]) {
     if (process.env[key]) environment[key] = process.env[key];
   }
   // launchctl submit implies KeepAlive, which relaunches dev even after Quit.

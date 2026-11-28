@@ -25,6 +25,8 @@ mod device_sync;
 mod device_usage;
 mod timestamps;
 pub mod quota;
+mod floating_usage;
+mod panel_shortcut;
 pub mod settings;
 pub mod workspaces;
 pub mod store;
@@ -33,6 +35,7 @@ pub mod tray_text;
 
 use serde::Serialize;
 use tauri::{
+    menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     ActivationPolicy, AppHandle, Manager, WindowEvent,
 };
@@ -49,6 +52,8 @@ pub struct SettingsOut {
 /// App preferences and workspace metadata; no credentials or quota payloads.
 #[derive(Debug, Clone, Serialize)]
 pub struct AppState {
+    #[serde(rename = "panelShortcutError")]
+    pub panel_shortcut_error: Option<String>,
     pub settings: SettingsOut,
     pub app: settings::AppSettings,
 }
@@ -90,6 +95,7 @@ fn build_state(app: &AppHandle) -> AppState {
     };
 
     AppState {
+        panel_shortcut_error: app.state::<panel_shortcut::PanelShortcut>().error(),
         settings: SettingsOut {
             open_at_login: store.settings.open_at_login,
         },
@@ -286,6 +292,7 @@ async fn antigravity_accounts(app: AppHandle) -> Result<Vec<account_setup::Accou
         }).collect()
     }).await.map_err(|_| "Cannot read Antigravity accounts.".to_string())??;
     let active = accounts.iter().find(|account| account.active).map(|account| tray::ProfileUsage {
+        plan: None,
         id: account.id.clone(), name: account.name.clone(), provider: "antigravity".into(), active: true, quota: None,
     });
     app.state::<tray::MenuBarMonitor>().active_antigravity(&app, generation, active);
@@ -364,10 +371,10 @@ async fn set_settings(app: AppHandle, openAtLogin: bool) -> Result<AppState, Str
 /// Merge panel/menu-bar preferences and immediately apply the native display.
 #[tauri::command]
 async fn set_app_settings(app: AppHandle, settings: serde_json::Value) -> Result<AppState, String> {
-    let path = paths::settings_file();
-    let (saved, ()) = settings::update_settings(&path, |current| {
-        settings::merge_global(current, &settings)
-    })?;
+    let handle = app.clone();
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        handle.state::<panel_shortcut::PanelShortcut>().update(&handle, settings)
+    }).await.map_err(|_| "Cannot update settings.".to_string())??;
     app.state::<tray::MenuBarMonitor>().update(&app, saved);
     Ok(build_state(&app))
 }
@@ -627,6 +634,18 @@ fn cancel_codex_restart(app: AppHandle) -> Result<Option<desktop_switch::SwitchS
 fn run_codex_restart_now(app: AppHandle) -> Result<Option<desktop_switch::SwitchStatus>, String> { app.state::<desktop_switch::DesktopSwitch>().run_now() }
 
 #[tauri::command]
+fn set_panel_shortcut_recording(window: tauri::WebviewWindow, active: bool) {
+    if window.label() == "main" {
+        window.state::<panel_shortcut::PanelShortcut>().recording.store(active, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[tauri::command]
+fn hide_panel_from_shortcut(window: tauri::WebviewWindow) {
+    if window.label() == "main" { panel_shortcut::hide(window.app_handle()); }
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
 }
@@ -659,17 +678,6 @@ mod panel_focus_tests {
     #[test]
     fn leaving_import_restores_normal_panel_dismissal() {
         assert!(dismiss_panel_on_blur(false));
-    }
-}
-
-fn toggle_panel(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    if window.is_visible().unwrap_or(false) {
-        let _ = window.hide();
-    } else {
-        show_panel(app);
     }
 }
 
@@ -775,26 +783,10 @@ pub fn run() {
     // A running installed app must not intercept a dev launch via single-instance IPC.
     #[cfg(debug_assertions)]
     { context.config_mut().identifier = "com.7skylab.orbilap.dev".into(); }
-    tauri::Builder::default()
-        .manage(desktop_switch::DesktopSwitch::default())
-        .manage(PanelFileImport::default())
-        .on_page_load(|webview, payload| {
-            // A full Vite reload must not retain a previous form's import state.
-            if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started {
-                webview.state::<PanelFileImport>().0.store(false, std::sync::atomic::Ordering::Relaxed);
-            }
-        })
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_panel(app);
-        }))
-        .plugin(tauri_plugin_autostart::Builder::new().app_name("Orbilap").build())
-        .plugin(tauri_plugin_positioner::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![
+    let commands: Box<dyn Fn(tauri::ipc::Invoke) -> bool + Send + Sync> = Box::new(tauri::generate_handler![
+            floating_usage::floating_usage_limit_options, floating_usage::floating_usage_snapshot, floating_usage::floating_usage_action, floating_usage::floating_usage_drag,
             set_panel_file_import,
+            set_panel_shortcut_recording, hide_panel_from_shortcut,
             get_state,
             create_workspace,
             create_discovered_workspace,
@@ -842,7 +834,38 @@ pub fn run() {
             cancel_codex_restart,
             run_codex_restart_now,
             quit_app
-        ])
+            ]);
+    tauri::Builder::default()
+        .manage(desktop_switch::DesktopSwitch::default())
+        .manage(PanelFileImport::default())
+        .manage(panel_shortcut::PanelShortcut::default())
+        .manage(floating_usage::FloatingUsage::default())
+        .on_page_load(|webview, payload| {
+            // A full Vite reload must not retain a previous form's import state.
+            if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started {
+                webview.state::<PanelFileImport>().0.store(false, std::sync::atomic::Ordering::Relaxed);
+                webview.state::<panel_shortcut::PanelShortcut>().recording.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        })
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_panel(app);
+        }))
+        .plugin(tauri_plugin_autostart::Builder::new().app_name("Orbilap").build())
+        .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, key, event| {
+            panel_shortcut::handle(app, key, event.state);
+        }).build())
+        .invoke_handler(move |invoke: tauri::ipc::Invoke| {
+            if !floating_usage::ipc_allowed(invoke.message.webview_ref().label(), invoke.message.command()) {
+                invoke.resolver.reject("This command is unavailable from this window.");
+                return true;
+            }
+            commands(invoke)
+        })
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -852,7 +875,9 @@ pub fn run() {
                 }
             }
 
-            // Direct toggle on click — no menu, so nothing intercepts the click.
+            // Let the OS own menu presentation, keyboard navigation and dismissal.
+            let quit = MenuItem::with_id(app, "tray-quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&quit])?;
             let mut builder = TrayIconBuilder::with_id("main");
             let ink = if cfg!(target_os = "macos") { tray::TEMPLATE_INK } else { tray::DEFAULT_ACCENT };
             builder = builder.icon(tray::render(ink)).tooltip(tray::MENU_BAR_NAME);
@@ -860,21 +885,30 @@ pub fn run() {
             {
                 builder = builder.icon_as_template(true).title(tray::MENU_BAR_TITLE);
             }
-            let app_handle = app.handle().clone();
             builder
-                .on_tray_icon_event(move |_tray, event| {
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
                         ..
                     } = event
                     {
-                        toggle_panel(&app_handle);
+                        show_panel(tray.app_handle());
                     }
                 })
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "tray-quit" => quit_app(app.clone()),
+                    _ => {}
+                })
                 .build(app)?;
-            tray::start_monitor(app.handle(), settings::read_settings(&paths::settings_file()));
+            let settings = settings::read_settings(&paths::settings_file());
+            app.state::<panel_shortcut::PanelShortcut>().start(app.handle(), &settings.panel_shortcut);
+            tray::start_monitor(app.handle(), settings);
             device_sync::start_monitor(app.handle().clone());
+            floating_usage::start_recovery(app.handle().clone());
+
             #[cfg(debug_assertions)]
             if tray::claude_preview_enabled() {
                 if let Some(window) = app.get_webview_window("main") {
@@ -884,11 +918,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let WindowEvent::Moved(position) = &event { floating_usage::moved(window, position); }
             if window.label() == "main" {
                 if let WindowEvent::ThemeChanged(_) = event {
                     if let Some(monitor) = window.try_state::<tray::MenuBarMonitor>() { monitor.appearance_changed(window.app_handle()); }
                 }
                 if let WindowEvent::Focused(false) = event {
+                    window.state::<panel_shortcut::PanelShortcut>().recording.store(false, std::sync::atomic::Ordering::SeqCst);
                     // WebKit's file chooser is app-modal and temporarily takes focus
                     // from the panel. Keep the existing panel visible behind it.
                     #[cfg(target_os = "macos")]
@@ -908,8 +944,8 @@ pub fn run() {
         })
         .build(context)
         .expect("error while building tauri application")
-        .run(|_, event| {
-            if matches!(event, tauri::RunEvent::Exit) { profile_login::shutdown();
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) { floating_usage::flush_position(app); profile_login::shutdown();
             account_setup::shutdown(); }
         });
 }

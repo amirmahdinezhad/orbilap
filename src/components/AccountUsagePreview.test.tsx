@@ -54,7 +54,7 @@ it("updates at the actual deadline without claiming the quota has already refres
 it("keeps reserve/model windows inline and supports keyboard disclosure", async () => {
   const user = userEvent.setup();
   render(<AccountQuotaPreview accountName="Work" quota={{provider:"codex",windows:[{window:"weekly",percent:12},{window:"gpt-reserve",percent:40}]}} />);
-  const trigger = screen.getByRole("button", {name:"Additional limits 1"});
+  const trigger = screen.getByRole("button", {name:"Additional limits"});
   const content = document.getElementById(trigger.getAttribute("aria-controls")!)!;
   const scrollIntoView = vi.fn();
   content.scrollIntoView = scrollIntoView;
@@ -83,7 +83,7 @@ it("reveals limits during expansion and stops following after a quick collapse",
   });
   const user = userEvent.setup();
   render(<AccountQuotaPreview accountName="Work" quota={{provider:"codex",windows:[{window:"weekly",percent:12},{window:"reserve",percent:40}]}} />);
-  const trigger = screen.getByRole("button", {name:"Additional limits 1"});
+  const trigger = screen.getByRole("button", {name:"Additional limits"});
   const content = document.getElementById(trigger.getAttribute("aria-controls")!)!;
   const scrollIntoView = vi.fn();
   content.scrollIntoView = scrollIntoView;
@@ -159,3 +159,12 @@ it("updates an open reset tooltip when the deadline or clock format changes", as
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
 });
+
+it.each([[99.5, 1], [99.51, 1], [99.9, 1], [99.999, 1], [100, 0], [101, 0]])(
+  "keeps positive remaining quota visible for %s%% used",
+  (percent, remaining) => {
+    render(<AccountUsagePreview windows={[{window:"weekly", percent}]} accountName="Test" />);
+    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuenow", String(remaining));
+    expect(screen.getByRole("group")).toHaveAccessibleDescription(`Weekly ${remaining}% remaining`);
+  },
+);

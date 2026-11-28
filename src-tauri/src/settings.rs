@@ -111,6 +111,8 @@ impl Default for MultiProfileSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppSettings {
+    pub floating_usage: crate::floating_usage::Preferences,
+    pub panel_shortcut: crate::panel_shortcut::Preferences,
     /// Panel refresh cadence in seconds (clamped to 10..=300).
     pub refresh_interval_secs: u32,
     /// Count remaining quota down from 100% by default; false shows used quota.
@@ -226,6 +228,8 @@ impl CodexAccountPreferences {
 impl Default for AppSettings {
     fn default() -> Self {
         AppSettings {
+            floating_usage: crate::floating_usage::Preferences::default(),
+            panel_shortcut: crate::panel_shortcut::Preferences::default(),
             refresh_interval_secs: default_refresh(),
             usage_show_remaining: true,
             menu_bar_enabled: false,
@@ -268,6 +272,7 @@ impl AppSettings {
     }
     /// Keep every value inside the range the UI expects.
     pub fn normalize(&mut self) {
+        self.floating_usage.normalize();
         self.refresh_interval_secs = self.refresh_interval_secs.clamp(10, 300);
         self.provider_accents.retain(|id, color| {
             matches!(id.as_str(), "codex" | "claude" | "opencode" | "opencode-go")
@@ -328,7 +333,9 @@ pub fn read_settings(path: &Path) -> AppSettings {
         if map.keys().any(|k| {
             !matches!(
                 k.as_str(),
-                "refreshIntervalSecs"
+                "floatingUsage"
+                    | "panelShortcut"
+                    | "refreshIntervalSecs"
                     | "usageShowRemaining"
                     | "menuBarEnabled"
                     | "menuBarProvider"
@@ -427,6 +434,21 @@ fn update_locked<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcut_is_opt_in_and_round_trips_without_touching_workspaces() {
+        let mut app: AppSettings = serde_json::from_str("{}").unwrap();
+        assert!(!app.panel_shortcut.enabled);
+        app.panel_shortcut = crate::panel_shortcut::Preferences { enabled: true, accelerator: "control+alt+KeyP".into() };
+        let dir = std::env::temp_dir().join(format!("orbilap-shortcut-settings-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        write_settings(&path, &app);
+        assert_eq!(read_settings(&path).panel_shortcut, app.panel_shortcut);
+        update_settings(&path, |settings| merge_global(settings, &serde_json::json!({"refreshIntervalSecs":120}))).unwrap();
+        assert_eq!(read_settings(&path).panel_shortcut, app.panel_shortcut);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn warning_levels_round_trip_independently_of_removed_alerts() {

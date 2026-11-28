@@ -9,19 +9,22 @@ function DialogContent({
   className,
   overlayClassName,
   layer = 0,
+  input,
   style,
   children,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content> & { overlayClassName?: string; layer?: number }) {
+}: ComponentProps<typeof DialogPrimitive.Content> & { overlayClassName?: string; layer?: number; input?: string }) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
         data-slot="dialog-overlay"
+        data-input={input}
         className={cn("ak-backdrop", overlayClassName)}
         style={{ zIndex: 200 + layer * 2 }}
       />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-input={input}
         className={cn("ak-dialog", className)}
         {...props}
         style={{ ...style, zIndex: 201 + layer * 2 }}
