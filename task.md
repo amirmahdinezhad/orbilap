@@ -1,6 +1,6 @@
 # Orbilap 1.1.0 release preparation
 
-2026-11-28 · Publication approved; final packaging and verification in progress.
+2026-11-28 · Done; published with owner-accepted native verification limits.
 
 Owner requested pushing all accumulated changes and publishing a new GitHub
 release, then explicitly approved 1.1.0 and its reviewed notes, accepting the
@@ -14,6 +14,14 @@ tag the exact source, build/sign separate Apple Silicon and Intel packages,
 verify both DMGs/updater archives and tamper rejection, publish through the
 approved command, and confirm unauthenticated feed/downloads. Native visual
 and installed-copy updater checks remain outstanding and are not claimed.
+
+Published https://github.com/amirmahdinezhad/orbilap/releases/tag/v1.1.0
+from tag v1.1.0 at e6ea03939e0cce2058455c45c58adf8e2caa2838. Both local
+architecture builds, signed updater archives, compressed DMGs, checksums,
+matching app binaries and tamper rejection passed. The approved publication
+path reverified the downloaded draft and confirmed the unauthenticated public
+feed plus both DMG/archive hashes. See the version security report for scope
+and remaining owner-accepted native/upgrade/physical Intel limitations.
 
 TypeScript, 551 Vitest tests, 20 script security tests, 8 release tests,
 locked offline Cargo check and full Rust rerun passed (317 unit, 8 integration,
